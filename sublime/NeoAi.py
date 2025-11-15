@@ -31,7 +31,7 @@ if is_native_auto_complete() or (
 ):
     if int(sublime.version()) >= 4000:
         is_v3 = True
-        from .completions.completions_v3 import *
+        from .completions.completions_v4 import *
     else:
         is_v2 = True
         from .completions.completions_v2 import *

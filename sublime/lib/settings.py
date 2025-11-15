@@ -31,7 +31,7 @@ def _setup():
             with open(_settings_dir) as json_file:
                 data = remove_trailing_comma(json_file)
                 _SETTINGS = json.loads(data)
-        except:  # noqa E722
+        except (IOError, json.JSONDecodeError):
             _SETTINGS = {}
 
 
@@ -41,7 +41,7 @@ def get_version():
         try:
             with open(_package_dir) as json_file:
                 _VERSION = json.load(json_file)["version"]
-        except Exception as e:  # noqa E722
+        except (IOError, json.JSONDecodeError, KeyError):
             _VERSION = None
     return _VERSION
 
@@ -59,7 +59,6 @@ def is_development():
 
     return _DEVELOPMENT
 
-
 def is_native_auto_complete():
     global _IS_NATIVE_AUTO_IMPORT
     if _IS_NATIVE_AUTO_IMPORT is None:
@@ -67,7 +66,6 @@ def is_native_auto_complete():
         _IS_NATIVE_AUTO_IMPORT = _SETTINGS.get("native_auto_complete", False)
 
     return _IS_NATIVE_AUTO_IMPORT
-
 
 def is_neoai_disabled(view):
     return view.settings().get("neoai-disabled", False)
