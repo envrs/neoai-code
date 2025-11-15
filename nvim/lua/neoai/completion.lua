@@ -1,259 +1,148 @@
-local consts = require("neoai.consts")
+local M = {}
+local api = vim.api
+local fn = vim.fn
+local uv = vim.uv or vim.loop
 local config = require("neoai.config")
+local consts = require("neoai.consts")
 local state = require("neoai.state")
-local features = require("neoai.features")
+local neoai_binary = require("neoai.binary")
 local utils = require("neoai.utils")
 
-local M = {}
-
--- Completion state
-local completion_state = {
-    active = false,
-    context = nil,
-    request_id = nil,
-    suggestions = {},
-    current_suggestion = 0,
-}
-
--- Initialize completion
-function M.init()
-    completion_state.active = false
-    completion_state.context = nil
-    completion_state.request_id = nil
-    completion_state.suggestions = {}
-    completion_state.current_suggestion = 0
+local function valid_response(response)
+	return response and response.results and #response.results > 0 and #response.results[1].new_prefix > 0
 end
 
--- Trigger completion manually
-function M.trigger_completion()
-    if not features.is_enabled("auto_complete") then
-        return
-    end
-    
-    local context = M.get_completion_context()
-    if not context or #context.prefix < 3 then
-        return
-    end
-    
-    M.request_completion(context)
+function M.accept()
+	M.clear()
+	--- Don't error if no completion available!
+	if not state.rendered_completion or state.rendered_completion == "" then return end
+	local lines = utils.str_to_lines(state.rendered_completion)
+
+	if utils.starts_with(state.rendered_completion, "\n") then
+		api.nvim_buf_set_lines(0, fn.line("."), fn.line("."), false, lines)
+		api.nvim_win_set_cursor(0, {
+			fn.line(".") + #lines,
+			fn.col(".") + #lines[#lines],
+		})
+		return
+	end
+
+	api.nvim_put(lines, "c", false, true)
+	state.completions_cache = nil
 end
 
--- Auto-trigger completion
-function M.auto_trigger()
-    if not features.is_enabled("auto_complete") or completion_state.active then
-        return
-    end
-    
-    local context = M.get_completion_context()
-    if not context or #context.prefix < 3 then
-        return
-    end
-    
-    -- Debounced auto-trigger
-    local debounced_trigger = utils.debounce(function()
-        M.request_completion(context)
-    end, 500)
-    
-    debounced_trigger()
+function M.clear()
+	if state.cancel_completion then state.cancel_completion() end
+	state.debounce_timer:stop()
+	api.nvim_buf_clear_namespace(0, consts.neoai_namespace, 0, -1)
 end
 
--- Get completion context
-function M.get_completion_context()
-    local bufnr = vim.api.nvim_get_current_buf()
-    local cursor = utils.get_cursor()
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    
-    -- Get current line up to cursor
-    local current_line = lines[cursor[1]] or ""
-    local prefix = current_line:sub(1, cursor[2])
-    
-    -- Get surrounding context
-    local start_line = math.max(1, cursor[1] - 10)
-    local end_line = math.min(#lines, cursor[1] + 5)
-    local context_lines = {}
-    
-    for i = start_line, end_line do
-        table.insert(context_lines, lines[i])
-    end
-    
-    return {
-        prefix = prefix,
-        cursor_line = cursor[1],
-        cursor_col = cursor[2],
-        buffer_content = table.concat(context_lines, "\n"),
-        file_type = vim.api.nvim_buf_get_option(bufnr, "filetype"),
-        file_path = vim.api.nvim_buf_get_name(bufnr),
-    }
+function M.should_complete()
+	return state.active
+		and utils.document_changed()
+		and not vim.tbl_contains(config.get_config().exclude_filetypes, vim.bo.filetype)
+		and consts.valid_end_of_line_regex:match_str(utils.end_of_line())
 end
 
--- Request completion from API
-function M.request_completion(context)
-    if not config.get("api_key") then
-        vim.notify("NeoAI: API key not configured", vim.log.levels.WARN)
-        return
-    end
-    
-    completion_state.active = true
-    completion_state.context = context
-    state.set_completion_active(true, context)
-    
-    -- Build completion request
-    local prompt = M.build_completion_prompt(context)
-    local completion_config = config.get_completion_config()
-    
-    -- Mock API call (replace with actual implementation)
-    local start_time = vim.loop.hrtime() / 1e6
-    completion_state.request_id = utils.generate_id()
-    
-    -- Simulate async API call
-    vim.defer_fn(function()
-        local suggestions = M.mock_completion_suggestions(context)
-        local end_time = vim.loop.hrtime() / 1e6
-        local response_time = end_time - start_time
-        
-        completion_state.suggestions = suggestions
-        completion_state.current_suggestion = 0
-        completion_state.active = false
-        
-        state.record_request(response_time)
-        state.set_completion_active(false)
-        
-        if #suggestions > 0 then
-            M.show_completion_suggestions()
-        end
-    end, 300)
+function M.complete()
+	local now = uv.now()
+	local changedtick = vim.b.changedtick
+	local before_table = api.nvim_buf_get_text(0, 0, 0, fn.line(".") - 1, fn.col(".") - 1, {})
+	local before = table.concat(before_table, "\n")
+
+	local after_table =
+		api.nvim_buf_get_text(0, fn.line(".") - 1, fn.col(".") - 1, fn.line("$") - 1, fn.col("$,$") - 1, {})
+	local after = table.concat(after_table, "\n")
+	state.cancel_completion = neoai_binary:request({
+		Autocomplete = {
+			before = before,
+			after = after,
+			filename = fn.expand("%:t"),
+			region_includes_beginning = true,
+			region_includes_end = false,
+			max_num_results = 1,
+			correlation_id = state.requests_counter,
+		},
+	}, function(response)
+		M.clear()
+		if not valid_response(response) then
+			state.completions_cache = nil
+			return
+		end
+
+		if
+			state.completions_cache
+			and utils.ends_with(state.completions_cache.results[1].new_prefix, response.results[1].new_prefix)
+		then
+			M.render(response.results[1].new_prefix, response.old_prefix, changedtick)
+			return
+		end
+
+		state.completions_cache = response
+		local debounce_ms = math.max(0, config.get_config().debounce_ms - (uv.now() - now))
+		state.debounce_timer:start(
+			debounce_ms,
+			0,
+			vim.schedule_wrap(function()
+				M.render(response.results[1].new_prefix, response.old_prefix, changedtick)
+			end)
+		)
+	end)
 end
 
--- Build completion prompt
-function M.build_completion_prompt(context)
-    return string.format([[
-Complete the following code in %s format. The cursor is at the end of the prefix.
+function M.render(completion, old_prefix, changedtick)
+	if not (vim.b.changedtick == changedtick) then return end
 
-File: %s
-Language: %s
+	local lines = utils.str_to_lines(completion)
 
-Context:
-%s
+	if utils.starts_with(completion, "\n") then
+		local other_lines = vim.tbl_map(function(line)
+			return { { line, consts.neoai_hl_group } }
+		end, lines)
 
-Prefix:
-%s
+		api.nvim_buf_set_extmark(
+			0,
+			consts.neoai_namespace,
+			fn.line(".") - 1,
+			fn.col(".") - 1,
+			{ virt_lines = other_lines }
+		)
 
-Provide 3-5 relevant completion suggestions that are syntactically correct and contextually appropriate.
-]], 
-        context.file_type,
-        context.file_path,
-        context.file_type,
-        context.buffer_content,
-        context.prefix
-    )
+		state.rendered_completion = completion
+		return
+	end
+
+	lines[1] = lines[1]:sub(#old_prefix + 1, -1)
+	lines[1] = utils.remove_matching_suffix(lines[1], utils.end_of_line())
+
+	local first_line = { { lines[1], consts.neoai_hl_group } }
+	local other_lines = vim.tbl_map(function(line)
+		return { { line, consts.neoai_hl_group } }
+	end, utils.subset(lines, 2))
+
+	api.nvim_buf_set_extmark(0, consts.neoai_namespace, fn.line(".") - 1, fn.col(".") - 1, {
+		virt_text_win_col = fn.virtcol(".") - 1,
+		virt_text = first_line,
+		virt_lines = other_lines,
+	})
+
+	state.rendered_completion = utils.lines_to_str(lines)
 end
 
--- Mock completion suggestions (replace with actual API call)
-function M.mock_completion_suggestions(context)
-    local suggestions = {}
-    
-    -- Simple mock suggestions based on file type
-    if context.file_type == "lua" then
-        if context.prefix:match("local%s+%w+$") then
-            suggestions = {" = {}", " = nil", " = function()", " = require("}
-        elseif context.prefix:match("if%s+%w+$") then
-            suggestions = {" then", " == nil then", " ~= nil then", " > 0 then"}
-        elseif context.prefix:match("function%s+%w+$") then
-            suggestions = {"()", "(arg1, arg2)", "(self)", "(...)"}
-        end
-    elseif context.file_type == "python" then
-        if context.prefix:match("def%s+%w+$") then
-            suggestions = {"():", "(self):", "(arg1, arg2):", "(*args, **kwargs):"}
-        elseif context.prefix:match("if%s+%w+$") then
-            suggestions = {" is None:", " == 0:", " > 0:", " in range("}
-        elseif context.prefix:match("import%s+%w+$") then
-            suggestions = {"", " as ", " from ", " *"}
-        end
-    elseif context.file_type == "javascript" or context.file_type == "typescript" then
-        if context.prefix:match("const%s+%w+$") then
-            suggestions = {" = {}", " = []", " = () => {}", " = new "}
-        elseif context.prefix:match("function%s+%w+$") then
-            suggestions = {"()", "(arg1, arg2)", "(...args)", "() {"}
-        elseif context.prefix:match("if%s+%w+$") then
-            suggestions = {" === null", " === undefined", " > 0", " === true"}
-        end
-    end
-    
-    -- Fallback suggestions
-    if #suggestions == 0 then
-        suggestions = {" ", "()", "[]", "{}", ";"}
-    end
-    
-    return suggestions
+function M.should_prefetch()
+	return state.active and not vim.tbl_contains(config.get_config().exclude_filetypes, vim.bo.filetype)
 end
 
--- Show completion suggestions
-function M.show_completion_suggestions()
-    if #completion_state.suggestions == 0 then
-        return
-    end
-    
-    local suggestion = completion_state.suggestions[completion_state.current_suggestion + 1]
-    if suggestion then
-        M.insert_completion(suggestion)
-    end
+function M.prefetch()
+	-- TODO add active_text_editor_changed event
+	neoai_binary:request({ Prefetch = { filename = api.nvim_buf_get_name(0) } }, function() end)
 end
 
--- Insert completion
-function M.insert_completion(text)
-    local bufnr = vim.api.nvim_get_current_buf()
-    local cursor = utils.get_cursor()
-    local line = cursor[1]
-    local col = cursor[2]
-    
-    -- Insert the completion
-    vim.api.nvim_buf_set_text(bufnr, line - 1, col, line - 1, col, {text})
-    
-    -- Move cursor to end of completion
-    utils.set_cursor(line, col + #text)
-end
-
--- Cycle through suggestions
-function M.next_suggestion()
-    if #completion_state.suggestions == 0 then
-        return
-    end
-    
-    completion_state.current_suggestion = (completion_state.current_suggestion + 1) % #completion_state.suggestions
-    M.show_completion_suggestions()
-end
-
-function M.previous_suggestion()
-    if #completion_state.suggestions == 0 then
-        return
-    end
-    
-    completion_state.current_suggestion = (completion_state.current_suggestion - 1) % #completion_state.suggestions
-    if completion_state.current_suggestion < 0 then
-        completion_state.current_suggestion = #completion_state.suggestions - 1
-    end
-    M.show_completion_suggestions()
-end
-
--- Update context
-function M.update_context()
-    if completion_state.active then
-        completion_state.context = M.get_completion_context()
-    end
-end
-
--- Stop completion
-function M.stop()
-    completion_state.active = false
-    completion_state.request_id = nil
-    completion_state.suggestions = {}
-    completion_state.current_suggestion = 0
-    state.set_completion_active(false)
-end
-
--- Get completion state
-function M.get_state()
-    return vim.deepcopy(completion_state)
+function M.trigger()
+	-- Manually trigger completion
+	if M.should_complete() then
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-x><C-a>", true, true, true), "n", true)
+	end
 end
 
 return M

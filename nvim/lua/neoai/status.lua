@@ -1,135 +1,70 @@
-local consts = require("neoai.consts")
-local state = require("neoai.state")
-local features = require("neoai.features")
+local uv = vim.uv or vim.loop
+local fn = vim.fn
 local utils = require("neoai.utils")
 
 local M = {}
+local DISABLED_FILE = utils.module_dir() .. "/.disabled"
+local config = require("neoai.config")
+local state = require("neoai.state")
+local neoai_binary = require("neoai.binary")
+local service_level = nil
+local status_prefix = "⌬ neoai"
 
--- Get status indicator
-function M.get_indicator()
-    local current_state = state.get()
-    
-    if current_state.last_error then
-        return consts.STATUS.ERROR
-    elseif current_state.connected and current_state.api_key_valid then
-        return consts.STATUS.SUCCESS
-    elseif current_state.connected then
-        return consts.STATUS.LOADING
-    else
-        return consts.STATUS.READY
-    end
+local function poll_service_level()
+	local timer = uv.new_timer()
+	timer:start(
+		0,
+		5000,
+		vim.schedule_wrap(function()
+			neoai_binary:request({ State = { dummy_property = true } }, function(response)
+				if response and (response.service_level == "Pro" or response.service_level == "Trial") then
+					service_level = "pro"
+				elseif response and response.service_level == "Business" then
+					service_level = "enterprise"
+				elseif response and response.service_level == "Dev" then
+					service_level = "dev"
+				else
+					service_level = "basic"
+				end
+			end)
+		end)
+	)
 end
 
--- Get status message
-function M.get_message()
-    local current_state = state.get()
-    
-    if current_state.last_error then
-        return "Error: " .. tostring(current_state.last_error)
-    elseif current_state.connected and current_state.api_key_valid then
-        return "Connected"
-    elseif current_state.connected then
-        return "Connecting..."
-    else
-        return "Disconnected"
-    end
+function M.setup()
+	if config.is_enterprise() then
+		service_level = "enterprise"
+	else
+		poll_service_level()
+	end
+	local _, disabled_file_exists = pcall(fn.filereadable, DISABLED_FILE)
+	state.active = disabled_file_exists == 0
 end
 
--- Get detailed status
-function M.get_detailed_status()
-    local current_state = state.get()
-    local enabled_features = features.list_enabled()
-    
-    return {
-        indicator = M.get_indicator(),
-        message = M.get_message(),
-        connected = current_state.connected,
-        api_key_valid = current_state.api_key_valid,
-        chat_active = current_state.chat_active,
-        completion_active = current_state.completion_active,
-        workspace_root = current_state.workspace_root,
-        request_count = current_state.request_count,
-        average_response_time = state.get_average_response_time(),
-        error_count = current_state.error_count,
-        last_error = current_state.last_error,
-        enabled_features = enabled_features,
-        healthy = state.is_healthy(),
-    }
+function M.enable_neoai()
+	pcall(fn.delete, DISABLED_FILE)
+	state.active = true
 end
 
--- Format status for display
-function M.format_status(format)
-    format = format or "compact"
-    local status = M.get_detailed_status()
-    
-    if format == "compact" then
-        return status.indicator .. " " .. status.message
-    elseif format == "detailed" then
-        return string.format([[
-%s %s
-- Requests: %d | Avg Time: %s | Errors: %d
-- Features: %s
-]], 
-            status.indicator,
-            status.message,
-            status.request_count,
-            utils.format_time(status.average_response_time),
-            status.error_count,
-            utils.join(status.enabled_features, ", ")
-        )
-    elseif format == "json" then
-        return vim.json.encode(status)
-    else
-        return M.get_message()
-    end
+function M.disable_neoai()
+	pcall(fn.writefile, { "" }, DISABLED_FILE, "b")
+	state.active = false
 end
 
--- Check if plugin is ready
-function M.is_ready()
-    local current_state = state.get()
-    return current_state.connected and current_state.api_key_valid
+function M.toggle_neoai()
+	if state.active then
+		M.disable_neoai()
+	else
+		M.enable_neoai()
+	end
 end
 
--- Check if plugin is healthy
-function M.is_healthy()
-    return state.is_healthy()
-end
+function M.status()
+	if state.active == false then return status_prefix .. " disabled" end
 
--- Show status notification
-function M.show_notification(level)
-    level = level or vim.log.levels.INFO
-    local message = M.format_status("detailed")
-    vim.notify(message, level)
-end
+	if not service_level then return status_prefix .. " loading" end
 
--- Update status display
-function M.update_display()
-    -- Update lualine if available
-    pcall(function()
-        local lualine = require("lualine")
-        if lualine then
-            vim.cmd("LualineRefresh")
-        end
-    end)
-    
-    -- Update statusline
-    local status = M.format_status("compact")
-    vim.opt.statusline = vim.opt.statusline:gsub("%%{neoai%.status%.get_indicator%%}", status)
-end
-
--- Register status updates
-function M.register_updates()
-    -- Update status on state changes
-    local state_update_group = vim.api.nvim_create_augroup("NeoaiStatusUpdate", { clear = true })
-    
-    vim.api.nvim_create_autocmd("User", {
-        group = state_update_group,
-        pattern = "NeoaiStateChanged",
-        callback = function()
-            M.update_display()
-        end,
-        desc = "NeoAI: Update status display on state change",
-    })
+	return status_prefix .. " " .. service_level
 end
 
 return M

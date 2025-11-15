@@ -1,182 +1,225 @@
+local fn = vim.fn
+local api = vim.api
+
 local M = {}
+local last_changedtick = vim.b.changedtick
 
--- Deep copy function
-function M.deep_copy(orig)
-    local orig_type = type(orig)
-    local copy
-    if orig_type == 'table' then
-        copy = {}
-        for orig_key, orig_value in next, orig, nil do
-            copy[M.deep_copy(orig_key)] = M.deep_copy(orig_value)
-        end
-        setmetatable(copy, M.deep_copy(getmetatable(orig)))
-    else
-        copy = orig
-    end
-    return copy
-end
-
--- Check if string is empty or nil
-function M.is_empty(str)
-    return not str or str == "" or str:match("^%s*$")
-end
-
--- Trim whitespace from string
-function M.trim(str)
-    if not str then return nil end
-    return str:match("^%s*(.-)%s*$")
-end
-
--- Split string by delimiter
-function M.split(str, delimiter)
-    if not str then return {} end
-    local result = {}
-    local pattern = string.format("([^%s]+)", delimiter)
-    for match in str:gmatch(pattern) do
-        table.insert(result, match)
-    end
-    return result
-end
-
--- Join table elements
-function M.join(tbl, separator)
-    if not tbl or #tbl == 0 then return "" end
-    separator = separator or ", "
-    return table.concat(tbl, separator)
-end
-
--- Check if file exists
-function M.file_exists(path)
-    local f = io.open(path, "r")
-    if f then
-        f:close()
-        return true
-    end
-    return false
-end
-
--- Read file content
-function M.read_file(path)
-    local f = io.open(path, "r")
-    if not f then return nil end
-    local content = f:read("*all")
-    f:close()
-    return content
-end
-
--- Write file content
-function M.write_file(path, content)
-    local f = io.open(path, "w")
-    if not f then return false end
-    f:write(content)
-    f:close()
-    return true
-end
-
--- Get file extension
-function M.get_extension(filename)
-    return filename:match("^.+%.(.+)$")
-end
-
--- Check if file is code file
-function M.is_code_file(filename)
-    local code_extensions = {
-        "lua", "py", "js", "ts", "java", "cpp", "c", "go", "rs",
-        "h", "hpp", "cs", "php", "rb", "swift", "kt", "scala"
-    }
-    local ext = M.get_extension(filename)
-    return ext and vim.tbl_contains(code_extensions, ext)
-end
-
--- Get current buffer content
-function M.get_buffer_content(bufnr)
-    bufnr = bufnr or vim.api.nvim_get_current_buf()
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    return table.concat(lines, "\n")
-end
-
--- Get current selection
-function M.get_selection()
-    local mode = vim.fn.mode()
-    if mode == "v" or mode == "V" or mode == "" then
-        local start_pos = vim.fn.getpos("'<")
-        local end_pos = vim.fn.getpos("'>")
-        local lines = vim.api.nvim_buf_get_lines(0, start_pos[2] - 1, end_pos[2], false)
-        
-        if #lines == 0 then return "" end
-        
-        if #lines == 1 then
-            return lines[1]:sub(start_pos[3], end_pos[3])
-        else
-            lines[1] = lines[1]:sub(start_pos[3])
-            lines[#lines] = lines[#lines]:sub(1, end_pos[3])
-            return table.concat(lines, "\n")
-        end
-    end
-    return ""
-end
-
--- Get cursor position
-function M.get_cursor()
-    return vim.api.nvim_win_get_cursor(0)
-end
-
--- Set cursor position
-function M.set_cursor(line, col)
-    vim.api.nvim_win_set_cursor(0, {line, col})
-end
-
--- Debounce function
 function M.debounce(func, delay)
-    local timer_id = nil
-    return function(...)
-        local args = {...}
-        if timer_id then
-            vim.fn.timer_stop(timer_id)
-        end
-        timer_id = vim.fn.timer_start(delay, function()
-            func(unpack(args))
-            timer_id = nil
-        end)
-    end
+	local timer_id
+	return function(...)
+		if timer_id then fn.timer_stop(timer_id) end
+		local args = { ... }
+		timer_id = fn.timer_start(delay, function()
+			func(unpack(args))
+		end)
+	end
 end
 
--- Throttle function
-function M.throttle(func, delay)
-    local last_time = 0
-    return function(...)
-        local current_time = vim.loop.hrtime() / 1e6 -- Convert to milliseconds
-        if current_time - last_time >= delay then
-            last_time = current_time
-            return func(...)
-        end
-    end
+function M.str_to_lines(str)
+	return fn.split(str, "\n")
 end
 
--- Async wrapper
-function M.async(func)
-    return function(...)
-        local args = {...}
-        vim.schedule(function()
-            func(unpack(args))
-        end)
-    end
+function M.lines_to_str(lines)
+	return fn.join(lines, "\n")
 end
 
--- Format time
-function M.format_time(ms)
-    if ms < 1000 then
-        return string.format("%.0fms", ms)
-    elseif ms < 60000 then
-        return string.format("%.1fs", ms / 1000)
+function M.remove_matching_suffix(str, suffix)
+	if not M.ends_with(str, suffix) then return str end
+	return str:sub(1, -#suffix - 1)
+end
+
+function M.remove_matching_prefix(str, prefix)
+	if not M.starts_with(str, prefix) then return str end
+	return str:sub(#prefix + 1)
+end
+
+function M.subset(tbl, from, to)
+	return { unpack(tbl, from, to) }
+end
+
+---returns the directory of the running script
+---@return string
+function M.script_dir()
+	local str = debug.getinfo(2, "S").source:sub(2)
+	return str:match("(.*/)") or "./"
+end
+
+---returns the directory of the root of the module
+---@return string
+function M.module_dir()
+	-- HACK: This only works if this file is not moved!
+	return M.script_dir() .. "../.."
+end
+
+function M.file_exists(path)
+    return vim.fn.filereadable(path) == 1
+end
+
+function M.get_config_file_path(filename)
+    local config_dir
+    
+    if M.is_windows() then
+        config_dir = vim.fn.expand('$LOCALAPPDATA') .. '/NeoAI'
+    elseif M.is_mac() then
+        config_dir = vim.fn.expand('$HOME') .. '/.config/neoai'
     else
-        return string.format("%.1fm", ms / 60000)
+        -- Linux and other Unix-like systems
+        local xdg_config = vim.fn.expand('$XDG_CONFIG_HOME')
+        if xdg_config and xdg_config ~= '' then
+            config_dir = xdg_config .. '/neoai'
+        else
+            config_dir = vim.fn.expand('$HOME') .. '/.config/neoai'
+        end
     end
+    
+    -- Create directory if it doesn't exist
+    vim.fn.mkdir(config_dir, 'p')
+    
+    return config_dir .. '/' .. (filename or 'config.json')
 end
 
--- Generate unique ID
-function M.generate_id()
-    return string.format("%x", os.time() * 1000 + math.random(1000, 9999))
+function M.prequire(...)
+	local status, lib = pcall(require, ...)
+	if status then return lib end
+	return nil
+end
+
+function M.pumvisible()
+	local cmp = M.prequire("cmp")
+	if cmp then
+		return cmp.visible()
+	else
+		return vim.fn.pumvisible() > 0
+	end
+end
+
+function M.current_position()
+	return { fn.line("."), fn.col(".") }
+end
+
+function M.ends_with(str, suffix)
+	if str == "" then return true end
+
+	return str:sub(-#suffix) == suffix
+end
+
+function M.starts_with(str, prefix)
+	if str == "" then return true end
+
+	return str:sub(1, #prefix) == prefix
+end
+
+function M.is_end_of_line()
+	return fn.col(".") == fn.col("$")
+end
+
+function M.end_of_line()
+	return api.nvim_buf_get_text(0, fn.line(".") - 1, fn.col(".") - 1, fn.line(".") - 1, fn.col("$"), {})[1]
+end
+
+function M.document_changed()
+	local current_changedtick = last_changedtick
+	last_changedtick = vim.b.changedtick
+	return last_changedtick > current_changedtick
+end
+
+function M.selected_text()
+	local mode = vim.fn.mode()
+	if mode ~= "v" and mode ~= "V" and mode ~= "" then return "" end
+	local a_orig = vim.fn.getreg("a")
+	vim.cmd([[silent! normal! "aygv]])
+	local text = vim.fn.getreg("a")
+	vim.fn.setreg("a", a_orig)
+	return text
+end
+
+function M.set(array)
+	local set = {}
+	local uniqueValues = {}
+
+	for _, value in ipairs(array) do
+		if not set[value] then
+			set[value] = true
+			table.insert(uniqueValues, value)
+		end
+	end
+
+	return uniqueValues
+end
+
+---Selects a given range of text
+---@param range table
+---@param selection_mode? 'charwise'|'linewise'|'blockwise'|'v'|'V'|'<C-v>'
+function M.select_range(range, selection_mode)
+	local start_row, start_col, end_row, end_col = range[1][1], range[1][2], range[2][1], range[2][2]
+
+	local v_table = { charwise = "v", linewise = "V", blockwise = "<C-v>" }
+	selection_mode = selection_mode or "charwise"
+
+	-- Normalise selection_mode
+	selection_mode = v_table[selection_mode] or selection_mode
+
+	-- enter visual mode if normal or operator-pending (no) mode
+	-- Why? According to https://learnvimscriptthehardway.stevelosh.com/chapters/15.html
+	--   If your operator-pending mapping ends with some text visually selected, Vim will operate on that text.
+	--   Otherwise, Vim will operate on the text between the original cursor position and the new position.
+	local mode = api.nvim_get_mode()
+	if mode.mode ~= selection_mode then
+		-- Call to `nvim_replace_termcodes()` is needed for sending appropriate command to enter blockwise mode
+		selection_mode = vim.api.nvim_replace_termcodes(selection_mode, true, true, true)
+		api.nvim_cmd({ cmd = "normal", bang = true, args = { selection_mode } }, {})
+	end
+
+	api.nvim_win_set_cursor(0, { start_row, start_col - 1 })
+	vim.cmd("normal! o")
+	api.nvim_win_set_cursor(0, { end_row, end_col - 1 })
+end
+
+function M.read_file_into_buffer(file_path)
+	local content = vim.fn.readfile(file_path)
+	local bufnr = vim.api.nvim_create_buf(false, true)
+
+	api.nvim_buf_set_lines(bufnr, 0, -1, false, content)
+
+	return bufnr
+end
+
+function M.read_lines_start(stream, on_line, on_error)
+	local buffer = ""
+	stream:read_start(function(error, chunk)
+		if error then
+			on_error(error)
+			return
+		end
+		-- if there's no new chunk, wait until one is recieved.
+		if not chunk then return end
+		buffer = buffer .. chunk
+		while true do
+			local start_pos = buffer:find("\n")
+			if not start_pos then break end
+			on_line(buffer:sub(1, start_pos - 1))
+			buffer = buffer:sub(start_pos + 1)
+		end
+	end)
+end
+
+--- A wrapper around vim.lsp.get_clients which support nvim 0.10 and before
+---@param bufnr integer?
+---@return vim.lsp.Client[]
+function M.buf_get_clients(bufnr)
+	bufnr = bufnr or 0
+	if vim.lsp.get_clients then return vim.lsp.get_clients({ bufnr = bufnr }) end
+	return vim.lsp.buf_get_clients(bufnr)
+end
+
+function M.buf_support_symbols()
+	local clients = M.buf_get_clients()
+
+	for _, client in ipairs(clients) do
+		if client.server_capabilities.documentSymbolProvider then return true end
+	end
+
+	return false
 end
 
 return M

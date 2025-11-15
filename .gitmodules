@@ -1,0 +1,3 @@
+[submodule "/Users/neopilot/Documents/GitHub/neoai-code/nvim/lua/neoai/third_party/semver"]
+	path = /Users/neopilot/Documents/GitHub/neoai-code/nvim/lua/neoai/third_party/semver
+	url = https://github.com/kikito/semver.lua.git

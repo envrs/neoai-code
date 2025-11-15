@@ -1,0 +1,236 @@
+*neoai.txt*	NeoAI Plugin for Neovim
+
+==============================================================================
+CONTENTS					*neoai* *NeoAI*
+
+1. Introduction ................................. |NeoAI-introduction|
+2. Requirements .................................. |NeoAI-requirements|
+3. Installation .................................. |NeoAI-installation|
+4. Configuration ................................. |NeoAI-configuration|
+5. Commands ...................................... |NeoAI-commands|
+6. Functions ..................................... |NeoAI-functions|
+7. Autocommands .................................. |NeoAI-autocommands|
+8. Windows Compatibility ......................... |NeoAI-windows|
+9. Troubleshooting ............................... |NeoAI-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION					*NeoAI-introduction*
+
+NeoAI is a powerful AI assistant plugin for Neovim that provides intelligent
+code completion, chat interface, and workspace integration capabilities.
+
+Features:
+- AI-powered code completion
+- Interactive chat interface
+- Workspace context awareness
+- LSP integration
+- Cross-platform support (Windows, macOS, Linux)
+
+==============================================================================
+2. REQUIREMENTS					*NeoAI-requirements*
+
+- Neovim 0.7.0 or later
+- API key for an AI service (OpenAI, Anthropic, etc.)
+- Git for version control operations
+- Optional: Node.js, Python 3, ripgrep, fd
+
+==============================================================================
+3. INSTALLATION					*NeoAI-installation*
+
+Using packer.nvim: >
+	use {
+		"neoai/neoai.nvim",
+		config = function()
+			require("neoai").setup({
+				api_key = "your-api-key-here",
+			})
+		end
+	}
+<
+
+Using vim-plug: >
+	Plug 'neoai/neoai.nvim'
+	lua require("neoai").setup({api_key = "your-api-key-here"})
+<
+
+==============================================================================
+4. CONFIGURATION					*NeoAI-configuration*
+
+Basic Setup: >
+	require("neoai").setup({
+		api_key = "your-api-key-here",
+		model = "gpt-4",
+		features = {
+			chat_interface = true,
+			auto_complete = true,
+			workspace_integration = true,
+			lsp_integration = true,
+		},
+	})
+<
+
+Platform-specific configuration (Windows): >
+	require("neoai").setup({
+		api_key = "your-api-key-here",
+		platform = {
+			binary_names = {
+				git = "git.exe",
+				curl = "curl.exe",
+			},
+			paths = {
+				config_dir = "C:\\Users\\YourUser\\AppData\\Roaming\\neoai",
+				cache_dir = "C:\\Users\\YourUser\\AppData\\Local\\neoai",
+			},
+		},
+	})
+<
+
+Configuration Options: ~
+api_key (string)			API key for AI service
+model (string)				AI model to use (default: "gpt-4")
+features (table)			Feature toggles
+platform (table)			Platform-specific settings
+
+==============================================================================
+5. COMMANDS						*NeoAI-commands*
+
+*:NeoAIChat*		Open the AI chat interface
+*:NeoAIComplete*	Trigger AI code completion
+*:NeoAIWorkspace*	Show workspace context
+*:NeoAIConfig*		Open configuration file
+*:NeoAIToggle*		Toggle NeoAI features
+*:NeoAIStatus*		Show plugin status
+*:NeoAIUpdate*		Update workspace files
+*:NeoAIClear*		Clear cache and temporary files
+*:NeoAILogPath*		Show log file path
+*:NeoAILogOpen*		Open log file in editor
+*:NeoAILogLevel*	[LEVEL]	Set or show log level
+*:NeoAILogTail*	[N]	Show last N lines of log (default: 50)
+*:NeoAILogSearch*	<PATTERN>	Search log for pattern
+*:NeoAILogInfo*		Show log file information
+*:NeoAILogExport*	[DEST]	Export log to file
+
+==============================================================================
+6. FUNCTIONS						*NeoAI-functions*
+
+neoai.setup({config})			Setup the plugin
+neoai.chat.open()			Open chat interface
+neoai.chat.close()			Close chat interface
+neoai.chat.send(message)		Send message to AI
+neoai.complete.trigger()		Trigger completion
+neoai.workspace.update()		Update workspace context
+neoai.workspace.get_context()		Get workspace context
+neoai.utils.file_exists(path)		Check if file exists
+neoai.utils.read_file(path)		Read file content
+neoai.utils.write_file(path, content)	Write file content
+neoai.platform.get_platform_info()	Get platform information
+neoai.platform.normalize_path(path)	Normalize path for platform
+neoai.platform.check_binary(name)		Check binary availability
+
+==============================================================================
+7. AUTOCOMMANDS					*NeoAI-autocommands*
+
+NeoAISetup			Triggered after plugin setup
+NeoAIChatOpen			Triggered when chat interface opens
+NeoAIChatClose			Triggered when chat interface closes
+NeoAIWorkspaceUpdate		Triggered when workspace is updated
+NeoAIComplete			Triggered when completion is requested
+
+Example usage: >
+	autocmd NeoAISetup lua print("NeoAI has been set up!")
+	autocmd NeoAIChatOpen lua print("Chat interface opened!")
+<
+
+==============================================================================
+8. LOGGING						*NeoAI-logging*
+
+NeoAI includes a comprehensive logging system to help with debugging and
+monitoring. Logs are automatically rotated to prevent disk space issues.
+
+Log Levels:~
+	TRACE		- Most verbose, includes all function calls
+	DEBUG		- Debug information
+	INFO		- General information (default)
+	WARN		- Warning messages
+	ERROR		- Error messages only
+	OFF		- Disable logging
+
+Log Files:~
+	Logs are stored in the platform-specific log directory:
+	- Windows: %APPDATA%\NeoAI\logs
+	- macOS: ~/Library/Caches/neoai/logs
+	- Linux: ~/.cache/neoai/logs
+
+Log Commands:~
+	:NeoAILogPath			Show current log file path
+	:NeoAILogOpen			Open log file in editor
+	:NeoAILogLevel [LEVEL]		Set or show log level
+	:NeoAILogTail [N]		Show last N lines (default: 50)
+	:NeoAILogSearch <PATTERN>	Search log for pattern
+	:NeoAILogInfo			Show log file information
+	:NeoAILogExport [DEST]		Export log to file
+
+Configuration:~
+>
+	require("neoai").setup({
+	  logging = {
+	    level = "INFO",           -- Log level
+	    file = true,              -- Enable file logging
+	    console = true,           -- Enable console logging
+	    max_file_size = 10485760, -- 10MB max file size
+	    max_files = 5,            -- Keep 5 log files
+	    log_file = "neoai.log",   -- Log file name
+	    log_dir = nil,            -- Auto-detect log directory
+	  },
+	})
+<
+
+==============================================================================
+9. WINDOWS COMPATIBILITY				*NeoAI-windows*
+
+NeoAI provides full Windows support with automatic platform detection.
+
+Windows-specific features:
+- Proper handling of Windows paths with backslashes
+- Windows executable naming (git.exe, curl.exe)
+- Windows environment variables (TEMP, APPDATA, USERPROFILE)
+- WSL path conversion support
+- Proper line ending handling (\r\n)
+
+Windows requirements:
+- Windows 10 or later
+- Git for Windows (includes git.exe, curl.exe)
+- Optional: Node.js, Python 3, ripgrep (rg.exe), fd (fd.exe)
+
+==============================================================================
+9. TROUBLESHOOTING				*NeoAI-troubleshooting*
+
+Common Issues:
+
+Plugin not loading:
+- Ensure Neovim version is 0.7.0 or later
+- Check that API key is properly configured
+- Verify installation with your plugin manager
+
+Binary not found:
+- On Windows: Ensure Git for Windows is installed
+- Check PATH environment variable
+- Use :NeoAIStatus to check binary availability
+
+File operations failing:
+- Check file permissions
+- Verify paths are correct for your platform
+- On Windows: Ensure paths use proper format
+
+Performance issues:
+- Reduce workspace size with exclude patterns
+- Limit context size in configuration
+- Clear cache with :NeoAIClear
+
+Getting help:
+- Use :checkhealth neoai to run health checks
+- Check :messages for error messages
+- Report issues on GitHub repository
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

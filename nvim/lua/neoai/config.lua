@@ -1,79 +1,78 @@
-local consts = require("neoai.consts")
-
 local M = {}
+local config = {}
 
--- Global configuration
-local config = vim.deepcopy(consts.DEFAULT_CONFIG)
-
--- Setup function
-function M.setup(user_config)
-    config = vim.tbl_deep_extend("force", config, user_config or {})
-    
-    -- Validate required settings
-    if not config.api_key then
-        vim.notify("NeoAI: API key not configured. Set config.api_key", vim.log.levels.WARN)
-    end
-    
-    -- Initialize features
-    local features = require("neoai.features")
-    features.init(config.features)
-    
-    -- Setup autocommands
-    local auto_commands = require("neoai.auto_commands")
-    auto_commands.setup()
-    
-    -- Setup user commands
-    local user_commands = require("neoai.user_commands")
-    user_commands.setup()
-    
-    -- Setup keymaps
-    local keymaps = require("neoai.keymaps")
-    keymaps.setup()
-    
-    -- Initialize LSP if enabled
-    if config.features.lsp_integration then
-        local lsp = require("neoai.lsp")
-        lsp.setup()
-    end
-    
-    vim.notify("NeoAI: Plugin initialized", vim.log.levels.INFO)
+function M.set_config(o)
+	config = vim.tbl_deep_extend("force", {
+		disable_auto_comment = false,
+		accept_keymap = "<Tab>",
+		dismiss_keymap = "<C-]>",
+		debounce_ms = 800,
+		suggestion_color = { gui = "#808080", cterm = 244 },
+		codelens_color = { gui = "#808080", cterm = 244 },
+		codelens_enabled = true,
+		exclude_filetypes = { "TelescopePrompt", "NvimTree" },
+		log_file_path = nil,
+		neoai_enterprise_host = nil,
+		ignore_certificate_errors = false,
+		workspace_folders = {
+			paths = {},
+			lsp = true,
+			get_paths = nil,
+		},
+	}, o or {})
 end
 
--- Get configuration value
+function M.get_config()
+	return config
+end
+
+function M.is_enterprise()
+	return config.neoai_enterprise_host ~= nil
+end
+
 function M.get(key)
-    if key then
-        return config[key]
-    end
-    return config
+	if not key then
+		return config
+	end
+	
+	-- Support dot notation for nested keys
+	local keys = vim.split(key, ".", { plain = true })
+	local value = config
+	
+	for _, k in ipairs(keys) do
+		if type(value) == "table" then
+			value = value[k]
+		else
+			return nil
+		end
+	end
+	
+	return value
 end
 
--- Set configuration value
 function M.set(key, value)
-    config[key] = value
-end
-
--- Check if feature is enabled
-function M.is_feature_enabled(feature)
-    return config.features[feature] == true
-end
-
--- Get API configuration
-function M.get_api_config()
-    return {
-        api_key = config.api_key,
-        api_endpoint = config.api_endpoint,
-        model = config.model,
-    }
-end
-
--- Get chat configuration
-function M.get_chat_config()
-    return config.chat_window
-end
-
--- Get completion configuration
-function M.get_completion_config()
-    return config.completion
+	if not key then
+		return
+	end
+	
+	-- Support dot notation for nested keys
+	local keys = vim.split(key, ".", { plain = true })
+	local target = config
+	
+	-- Navigate to the parent of the target key
+	for i = 1, #keys - 1 do
+		local k = keys[i]
+		if type(target) ~= "table" then
+			return
+		end
+		if not target[k] then
+			target[k] = {}
+		end
+		target = target[k]
+	end
+	
+	-- Set the final value
+	target[keys[#keys]] = value
 end
 
 return M

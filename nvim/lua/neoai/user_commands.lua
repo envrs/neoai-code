@@ -1,150 +1,68 @@
-local consts = require("neoai.consts")
-local config = require("neoai.config")
-local state = require("neoai.state")
-local features = require("neoai.features")
-local utils = require("neoai.utils")
-
 local M = {}
+local api = vim.api
+local chat = require("neoai.chat")
+local config = require("neoai.config")
+local status = require("neoai.status")
+local neoai_binary = require("neoai.binary")
+-- local ts_utls = require("nvim-treesitter.ts_utils")
 
--- Command implementations
-local commands = {}
-
--- Chat command
-commands[consts.COMMANDS.CHAT] = function(opts)
-    if not features.is_enabled("chat_interface") then
-        vim.notify("NeoAI: Chat interface is disabled", vim.log.levels.WARN)
-        return
-    end
-    
-    local chat = require("neoai.chat")
-    chat.toggle()
-end
-
--- Complete command
-commands[consts.COMMANDS.COMPLETE] = function(opts)
-    if not features.is_enabled("auto_complete") then
-        vim.notify("NeoAI: Auto completion is disabled", vim.log.levels.WARN)
-        return
-    end
-    
-    local completion = require("neoai.completion")
-    completion.trigger_completion()
-end
-
--- Toggle command
-commands[consts.COMMANDS.TOGGLE] = function(opts)
-    local feature = opts.args
-    if utils.is_empty(feature) then
-        vim.notify("NeoAI: Usage: " .. consts.COMMANDS.TOGGLE .. " <feature>", vim.log.levels.ERROR)
-        return
-    end
-    
-    if features.is_enabled(feature) then
-        features.disable(feature)
-    else
-        features.enable(feature)
-    end
-end
-
--- Config command
-commands[consts.COMMANDS.CONFIG] = function(opts)
-    local action = opts.args
-    if action == "show" then
-        local current_config = config.get()
-        vim.notify("NeoAI Config:\n" .. vim.inspect(current_config), vim.log.levels.INFO)
-    elseif action == "reset" then
-        config.setup(consts.DEFAULT_CONFIG)
-        vim.notify("NeoAI: Configuration reset to defaults", vim.log.levels.INFO)
-    else
-        vim.notify("NeoAI: Usage: " .. consts.COMMANDS.CONFIG .. " <show|reset>", vim.log.levels.ERROR)
-    end
-end
-
--- Status command
-commands[consts.COMMANDS.STATUS] = function(opts)
-    local current_state = state.get()
-    local enabled_features = features.list_enabled()
-    
-    local status_info = string.format([[
-NeoAI Status:
-- Connected: %s
-- API Key Valid: %s
-- Chat Active: %s
-- Completion Active: %s
-- Workspace Root: %s
-- Requests: %d
-- Avg Response Time: %s
-- Errors: %d
-- Enabled Features: %s
-]], 
-        current_state.connected and "Yes" or "No",
-        current_state.api_key_valid and "Yes" or "No",
-        current_state.chat_active and "Yes" or "No",
-        current_state.completion_active and "Yes" or "No",
-        current_state.workspace_root or "Unknown",
-        current_state.request_count,
-        utils.format_time(state.get_average_response_time()),
-        current_state.error_count,
-        utils.join(enabled_features, ", ")
-    )
-    
-    vim.notify(status_info, vim.log.levels.INFO)
-end
-
--- Keymaps command
-commands["NeoaiKeymaps"] = function(opts)
-    local action = opts.args
-    local keymaps = require("neoai.keymaps")
-    
-    if action == "status" then
-        keymaps.show_status()
-    elseif action == "check" then
-        local conflicts = keymaps.check_conflicts()
-        if #conflicts == 0 then
-            vim.notify("NeoAI: No keymap conflicts detected", vim.log.levels.INFO)
-        else
-            local conflict_list = {}
-            for _, conflict in ipairs(conflicts) do
-                table.insert(conflict_list, string.format("  %s %s -> %s", conflict.mode, conflict.lhs, conflict.existing))
-            end
-            vim.notify("NeoAI: Keymap conflicts detected:\n" .. table.concat(conflict_list, "\n"), vim.log.levels.WARN)
-        end
-    elseif action == "clear" then
-        keymaps.clear()
-        vim.notify("NeoAI: All keymaps cleared", vim.log.levels.INFO)
-    elseif action == "setup" then
-        keymaps.setup()
-    else
-        vim.notify("NeoAI: Usage: NeoaiKeymaps <status|check|clear|setup>", vim.log.levels.ERROR)
-    end
-end
-
--- Setup user commands
 function M.setup()
-    for command_name, command_func in pairs(commands) do
-        vim.api.nvim_create_user_command(command_name, command_func, {
-            nargs = "?",
-            desc = "NeoAI command: " .. command_name,
-        })
-    end
-    
-    vim.notify("NeoAI: User commands registered", vim.log.levels.DEBUG)
-end
+	if not config.is_enterprise() then
+		api.nvim_create_user_command("NeoaiHub", function()
+			neoai_binary:request({ Configuration = { quiet = false } }, function() end)
+		end, {})
 
--- Get all commands
-function M.get_commands()
-    return vim.tbl_keys(commands)
-end
+		api.nvim_create_user_command("NeoaiHubUrl", function()
+			neoai_binary:request({ Configuration = { quiet = true } }, function(response)
+				print(response.message)
+			end)
+		end, {})
 
--- Execute command by name
-function M.execute(command_name, opts)
-    opts = opts or {}
-    local command_func = commands[command_name]
-    if command_func then
-        command_func(opts)
-    else
-        vim.notify("NeoAI: Unknown command: " .. command_name, vim.log.levels.ERROR)
-    end
+		api.nvim_create_user_command("NeoaiWhoAmI", function()
+			neoai_binary:request({ State = { quiet = false } }, function(response)
+				print(response.user_name)
+			end)
+		end, {})
+	else
+		api.nvim_create_user_command("NeoaiWhoAmI", function()
+			neoai_binary:request({ UserInfo = { quiet = false } }, function(response)
+				print(response.email)
+			end)
+		end, {})
+	end
+
+	api.nvim_create_user_command("NeoaiLoginWithAuthToken", function()
+		neoai_binary:request({ LoginWithCustomTokenUrl = { dummy = true } }, function(url)
+			vim.ui.input({
+				prompt = string.format("Get your token from: %s\nPaste it here: ", url),
+			}, function(custom_token)
+				neoai_binary:request({
+					LoginWithCustomToken = { custom_token = custom_token },
+				}, function(response)
+					if response.is_success then
+						vim.notify("Logged in successfully")
+					else
+						vim.notify("Sign in failed", vim.log.levels.WARN)
+					end
+				end)
+			end)
+		end)
+	end, {})
+
+	api.nvim_create_user_command("NeoaiLogin", function()
+		neoai_binary:request({ Login = { dummy = true } }, function() end)
+	end, {})
+
+	api.nvim_create_user_command("NeoaiLogout", function()
+		neoai_binary:request({ Logout = { dummy = true } }, function() end)
+	end, {})
+
+	api.nvim_create_user_command("NeoaiEnable", status.enable_neoai, {})
+	api.nvim_create_user_command("NeoaiDisable", status.disable_neoai, {})
+	api.nvim_create_user_command("NeoaiToggle", status.toggle_neoai, {})
+	api.nvim_create_user_command("NeoaiStatus", function()
+		print(status.status())
+	end, {})
 end
 
 return M

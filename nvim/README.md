@@ -44,6 +44,49 @@ use {
 }
 ```
 
+### Windows Compatibility
+
+NeoAI now supports Windows with the following features:
+
+- **Platform Detection**: Automatic detection of Windows, macOS, and Linux
+- **Path Handling**: Proper handling of Windows paths (backslashes) and Unix paths (forward slashes)
+- **Binary Execution**: Windows-specific binary naming and execution (e.g., `git.exe`, `curl.exe`)
+- **File Operations**: Platform-aware file reading/writing with proper line ending handling
+- **Environment Variables**: Windows environment variable support (`TEMP`, `APPDATA`, `USERPROFILE`)
+- **WSL Support**: Windows Subsystem for Linux path conversion when applicable
+
+#### Windows Requirements
+
+- Windows 10 or later
+- Git for Windows (includes `git.exe`, `curl.exe`)
+- Optional: Node.js, Python 3, ripgrep (`rg.exe`), fd (`fd.exe`)
+
+#### Configuration for Windows
+
+The plugin automatically detects Windows and adjusts its behavior. No additional configuration is required, but you can customize platform-specific settings:
+
+```lua
+require("neoai").setup({
+  -- Your regular configuration
+  api_key = "your-api-key-here",
+  
+  -- Platform-specific options (optional)
+  platform = {
+    -- Override binary names if needed
+    binary_names = {
+      git = "git.exe",
+      curl = "curl.exe",
+    },
+    
+    -- Override paths if needed
+    paths = {
+      config_dir = "C:\\Users\\YourUser\\AppData\\Roaming\\neoai",
+      cache_dir = "C:\\Users\\YourUser\\AppData\\Local\\neoai",
+    },
+  },
+})
+```
+
 ### Using vim-plug
 
 ```vim
@@ -54,6 +97,95 @@ lua require("neoai").setup({api_key = "your-api-key-here"})
 ## Configuration
 
 ### Basic Setup
+
+```lua
+require("neoai").setup({
+  api_key = "your-api-key-here",
+  model = "gpt-4",
+  features = {
+    chat_interface = true,
+    auto_complete = true,
+    workspace_integration = true,
+    lsp_integration = true,
+  },
+})
+```
+
+## Logging
+
+NeoAI includes comprehensive logging to help with debugging and monitoring:
+
+### Log Levels
+- `TRACE` - Most verbose, includes all function calls
+- `DEBUG` - Debug information
+- `INFO` - General information (default)
+- `WARN` - Warning messages
+- `ERROR` - Error messages only
+- `OFF` - Disable logging
+
+### Log Commands
+```vim
+:NeoAILogPath         " Show current log file path
+:NeoAILogOpen         " Open log file in editor
+:NeoAILogLevel [LEVEL] " Set or show log level
+:NeoAILogTail [N]     " Show last N lines (default: 50)
+:NeoAILogSearch <PATTERN> " Search log for pattern
+:NeoAILogInfo         " Show log file information
+:NeoAILogExport [DEST] " Export log to file
+```
+
+### Configuration
+```lua
+require("neoai").setup({
+  logging = {
+    level = "INFO",           -- Log level
+    file = true,              -- Enable file logging
+    console = true,           -- Enable console logging
+    max_file_size = 10485760, -- 10MB max file size
+    max_files = 5,            -- Keep 5 log files
+    log_file = "neoai.log",   -- Log file name
+    log_dir = nil,            -- Auto-detect log directory
+  },
+})
+```
+
+## Documentation
+
+For complete documentation, see:
+- `:help neoai` - Main documentation
+- `:help NeoAI-commands` - Available commands
+- `:help NeoAI-functions` - Lua functions
+- `:help NeoAI-windows` - Windows compatibility
+- `:checkhealth neoai` - Run health checks
+
+### Quick Reference
+
+Commands:
+- `:NeoAIChat` - Open chat interface
+- `:NeoAIComplete` - Trigger completion
+- `:NeoAIWorkspace` - Show workspace info
+- `:NeoAIStatus` - Show plugin status
+- `:NeoAIConfig` - Open configuration file
+- `:NeoAIToggle <feature>` - Toggle features
+- `:NeoAIUpdate` - Update workspace files
+- `:NeoAIClear` - Clear cache
+- `:NeoAILogPath` - Show log file path
+- `:NeoAILogOpen` - Open log file
+- `:NeoAILogLevel [LEVEL]` - Set log level
+- `:NeoAILogTail [N]` - Show log tail
+- `:NeoAILogSearch <PATTERN>` - Search log
+- `:NeoAILogInfo` - Show log info
+- `:NeoAILogExport [DEST]` - Export log
+
+Key Mappings (default):
+- `<leader>ac` - Open chat interface
+- `<leader>aw` - Show workspace info
+- `<leader>as` - Show status
+- `<C-x><C-a>` (insert mode) - Trigger completion
+
+## Advanced Configuration
+
+### Completion Settings
 
 ```lua
 require("neoai").setup({

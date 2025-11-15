@@ -1,121 +1,167 @@
-local M = {}
+local uv = vim.uv or vim.loop
+local fn = vim.fn
+local json = vim.json
+local consts = require("neoai.consts")
+local semver = require("neoai.third_party.semver.semver")
+local utils = require("neoai.utils")
+local NeoaiBinary = {}
+local config = require("neoai.config")
 
--- Binary path cache
-local binary_cache = {}
+local api_version = "4.4.223"
+local binaries_path = utils.module_dir() .. "/binaries"
+
+local function arch_and_platform()
+	local os_uname = uv.os_uname()
+
+	if os_uname.sysname == "Linux" and os_uname.machine == "x86_64" then
+		return "x86_64-unknown-linux-musl"
+	elseif os_uname.sysname == "Linux" and os_uname.machine == "aarch64" then
+		return "aarch64-unknown-linux-musl"
+	elseif os_uname.sysname == "Darwin" and os_uname.machine == "arm64" then
+		return "aarch64-apple-darwin"
+	elseif os_uname.sysname == "Darwin" then
+		return "x86_64-apple-darwin"
+	elseif os_uname.sysname == "Windows_NT" and os_uname.machine == "x86_64" then
+		return "x86_64-pc-windows-gnu"
+	elseif os_uname.sysname == "Windows_NT" then
+		return "i686-pc-windows-gnu"
+	end
+end
+
+local function binary_name()
+	local os_uname = uv.os_uname()
+	if os_uname.sysname == "Windows_NT" then
+		return "NeoAi.exe"
+	else
+		return "NeoAi"
+	end
+end
+
+local function binary_path()
+	local paths = vim.tbl_map(function(path)
+		return fn.fnamemodify(path, ":t")
+	end, fn.glob(binaries_path .. "/*", true, true))
+
+	paths = vim.tbl_map(function(path)
+		return semver(path)
+	end, paths)
+
+	table.sort(paths)
+
+	return binaries_path .. "/" .. tostring(paths[#paths]) .. "/" .. arch_and_platform() .. "/" .. binary_name()
+end
+
+local function optional_args()
+	local config = config.get_config()
+	local args = {}
+	if config.log_file_path then table.insert(args, "--log-file-path=" .. config.log_file_path) end
+	if config.neoai_enterprise_host then table.insert(args, "--cloud2_url=" .. config.neoai_enterprise_host) end
+	return args
+end
 
 -- Find binary in system PATH
-function M.find_binary(name)
-    if binary_cache[name] then
-        return binary_cache[name]
-    end
-    
-    local path = vim.fn.exepath(name)
-    if path and path ~= "" then
-        binary_cache[name] = path
-        return path
-    end
-    
-    return nil
+local function find_binary(binary_name)
+	local path = vim.fn.exepath(binary_name)
+	return path ~= "" and path or nil
 end
 
--- Check if binary is available
-function M.is_available(name)
-    return M.find_binary(name) ~= nil
+function NeoaiBinary:start()
+	local config = config.get_config()
+	self.stdin = uv.new_pipe()
+	self.stdout = uv.new_pipe()
+	self.stderr = uv.new_pipe()
+	self.handle, self.pid = uv.spawn(binary_path(), {
+		args = vim.list_extend({
+			"--client",
+			"nvim",
+			"--client-metadata",
+			"ide-restart-counter=" .. self.restart_counter,
+			"pluginVersion=" .. consts.plugin_version,
+			"--tls_config",
+			"insecure=" .. tostring(config.ignore_certificate_errors),
+		}, optional_args()),
+		stdio = { self.stdin, self.stdout, self.stderr },
+	}, function()
+		self.handle, self.pid = nil, nil
+		uv.read_stop(self.stdout)
+	end)
+
+	utils.read_lines_start(
+		self.stdout,
+		vim.schedule_wrap(function(line)
+			local callback = table.remove(self.callbacks)
+			if not callback.cancelled then
+				local decoded = vim.json.decode(line, { luanil = { object = true, array = true } })
+				callback.callback(decoded)
+			end
+		end),
+		vim.schedule_wrap(function(error)
+			print("neoai binary read_start error", error)
+		end)
+	)
 end
 
--- Execute binary command
-function M.execute(name, args, opts)
-    opts = opts or {}
-    local binary_path = M.find_binary(name)
-    
-    if not binary_path then
-        error("Binary not found: " .. name)
-    end
-    
-    local cmd = {binary_path}
-    if args then
-        vim.list_extend(cmd, args)
-    end
-    
-    local result = vim.fn.system(cmd)
-    
-    if opts.check_exit and vim.v.shell_error ~= 0 then
-        error("Command failed: " .. table.concat(cmd, " ") .. "\n" .. result)
-    end
-    
-    return result
+function NeoaiBinary:new(o)
+	o = o or {}
+	setmetatable(o, self)
+	self.__index = self
+	self.stdin = nil
+	self.stdout = nil
+	self.stderr = nil
+	self.restart_counter = 0
+	self.handle = nil
+	self.pid = nil
+	self.callbacks = {}
+
+	return o
 end
 
--- Execute binary asynchronously
-function M.execute_async(name, args, opts, callback)
-    opts = opts or {}
-    local binary_path = M.find_binary(name)
-    
-    if not binary_path then
-        if callback then
-            callback(nil, "Binary not found: " .. name)
-        end
-        return
-    end
-    
-    local cmd = {binary_path}
-    if args then
-        vim.list_extend(cmd, args)
-    end
-    
-    vim.fn.jobstart(cmd, {
-        on_stdout = opts.on_stdout,
-        on_stderr = opts.on_stderr,
-        on_exit = function(job_id, exit_code)
-            local success = exit_code == 0
-            if callback then
-                callback(success, success and "Success" or "Exit code: " .. exit_code)
-            end
-        end,
-    })
+function NeoaiBinary:request(request, on_response)
+	if not self.pid then
+		self.restart_counter = self.restart_counter + 1
+		self:start()
+	end
+	uv.write(self.stdin, json.encode({ request = request, version = api_version }) .. "\n")
+	local callback = { cancelled = false, callback = on_response }
+	local function cancel()
+		callback.cancelled = true
+	end
+
+	table.insert(self.callbacks, 1, callback)
+	return cancel
 end
 
--- Get binary version
-function M.get_version(name, version_flag)
-    version_flag = version_flag or "--version"
-    
-    local binary_path = M.find_binary(name)
-    if not binary_path then
-        return nil
-    end
-    
-    local success, result = pcall(function()
-        return M.execute(name, {version_flag})
-    end)
-    
-    if success then
-        return result:match("(%d+%.%d+%.%d+)") or result:match("(%d+%.%d+)") or result
-    end
-    
-    return nil
+-- Expose find_binary function
+NeoaiBinary.find_binary = find_binary
+
+-- Helper functions for health checks
+function M.get_required_binaries()
+	return { "neoai-chat", "neoai-complete" }
 end
 
--- List all available binaries
-function M.list_available(binaries)
-    local available = {}
-    
-    for _, binary in ipairs(binaries) do
-        if M.is_available(binary) then
-            local version = M.get_version(binary)
-            table.insert(available, {
-                name = binary,
-                path = M.find_binary(binary),
-                version = version,
-            })
-        end
-    end
-    
-    return available
+function M.is_available(binary_name)
+	if not binary_name then
+		binary_name = "neoai-chat"
+	end
+	local path = find_binary(binary_name)
+	return path ~= nil
 end
 
--- Clear binary cache
-function M.clear_cache()
-    binary_cache = {}
+function M.get_version(binary_name)
+	if not binary_name then
+		binary_name = "neoai-chat"
+	end
+	local path = find_binary(binary_name)
+	if not path then
+		return nil
+	end
+	
+	local result = vim.fn.system(path .. " --version 2>/dev/null"):gsub("%s+", "")
+	if vim.v.shell_error == 0 and result ~= "" then
+		return result
+	end
+	
+	return "unknown"
 end
 
-return M
+return NeoaiBinary:new()
