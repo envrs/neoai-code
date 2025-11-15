@@ -2,6 +2,8 @@ package neoai
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,8 +47,7 @@ type ResultEntry struct {
 }
 
 const (
-	updateVersionUrl  = "https://update.neoai.com/version"
-	downloadUrlPrefix = "https://update.neoai.com"
+	updateUrlBase = "https://update.neoai.com"
 )
 
 var systemMap = map[string]string{
@@ -74,8 +75,8 @@ func (t *NeoAi) init() (err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
 		binaryPath, err = t.getBinaryPath()
-		wg.Done()
 	}(&wg)
 	t.inPipeReader, t.inPipeWriter = io.Pipe()
 	t.outPipeReader, t.outPipeWriter = io.Pipe()
@@ -86,81 +87,97 @@ func (t *NeoAi) init() (err error) {
 		t.cmd.Stdout = t.outPipeWriter
 		t.outReader = bufio.NewReader(t.outPipeReader)
 		err = t.cmd.Start()
-		// go t.cmd.Wait()
 	}
 	log.Println("NeoAi Initialized")
 	return
 }
 
-func (t *NeoAi) downloadBinary(url, binaryPath string) (err error) {
+func (t *NeoAi) downloadAndVerifyBinary(url, binaryPath string) (err error) {
+	// Create directory if it doesn't exist
 	binaryDir := filepath.Dir(binaryPath)
-	isExist, isDir := checkDir(binaryDir)
-	if isExist && !isDir {
-		err = os.RemoveAll(binaryDir)
-		if err != nil {
-			return
-		}
+	if err = os.MkdirAll(binaryDir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", binaryDir, err)
 	}
 
-	if !isExist {
-		err = os.MkdirAll(binaryDir, os.ModePerm)
-		if err != nil {
-			return
-		}
-	}
-
-	resp, err := http.Get(url)
+	// 1. Download checksum
+	checksumUrl := url + ".sha256"
+	var expectedChecksum string
+	resp, err := http.Get(checksumUrl)
 	if err != nil {
-		return
+		log.Printf("Could not download checksum from %s: %v. Proceeding without verification.", checksumUrl, err)
+	} else {
+		defer resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("Could not read checksum body: %v. Proceeding without verification.", err)
+			} else {
+				expectedChecksum = strings.TrimSpace(string(body))
+			}
+		}
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		err = fmt.Errorf("Request update version error: %s", resp.Status)
-		return
+	// 2. Download binary to a temp file
+	resp, err = http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download binary from %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
-	out, err := os.Create(binaryPath)
-	if err != nil {
-		return
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("download request failed with status: %s", resp.Status)
 	}
-	defer out.Close()
-	_, err = io.Copy(out, resp.Body)
-	return
+
+	tmpFile, err := ioutil.TempFile("", "neoai-binary-")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	hasher := sha256.New()
+	// Download and write to file, while also calculating the hash
+	if _, err := io.Copy(io.MultiWriter(tmpFile, hasher), resp.Body); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	// 3. Verify checksum
+	if expectedChecksum != "" {
+		actualChecksum := hex.EncodeToString(hasher.Sum(nil))
+		if !strings.EqualFold(actualChecksum, expectedChecksum) {
+			return fmt.Errorf("checksum mismatch for %s. Expected %s, got %s", url, expectedChecksum, actualChecksum)
+		}
+		log.Println("Checksum verified.")
+	}
+
+	// 4. Move temp file to final destination
+	if err := os.Rename(tmpFile.Name(), binaryPath); err != nil {
+		return fmt.Errorf("failed to move binary to destination: %w", err)
+	}
+
+	return os.Chmod(binaryPath, 0755)
 }
 
-func (t *NeoAi) getBinaryPath() (binaryPath string, err error) {
-	binaryDir := t.baseDir + "/binaries"
-	if err != nil {
-		return
-	}
-	needCreateDir := true
-	isExist, isDir := checkDir(binaryDir)
-	if isExist && isDir {
-		needCreateDir = false
-	}
-	if isExist && !isDir {
-		err = os.RemoveAll(binaryDir)
-		if err != nil {
-			return
-		}
-	}
-
-	if needCreateDir {
-		os.MkdirAll(binaryDir, os.ModePerm)
+func (t *NeoAi) getBinaryPath() (string, error) {
+	binaryDir := filepath.Join(t.baseDir, "binaries")
+	if err := os.MkdirAll(binaryDir, os.ModePerm); err != nil {
+		return "", fmt.Errorf("failed to create binary directory: %w", err)
 	}
 
 	dirs, err := ioutil.ReadDir(binaryDir)
 	if err != nil {
-		return
+		return "", fmt.Errorf("failed to read binary directory: %w", err)
 	}
 
 	var versions []*semver.Version
-
 	for _, d := range dirs {
-		versions = append(versions, semver.New(d.Name()))
+		if d.IsDir() {
+			versions = append(versions, semver.New(d.Name()))
+		}
 	}
 	semver.Sort(versions)
+
 	arch := parseArch(runtime.GOARCH)
 	sys := systemMap[strings.ToLower(runtime.GOOS)]
 	exeName := "NeoAi"
@@ -168,50 +185,57 @@ func (t *NeoAi) getBinaryPath() (binaryPath string, err error) {
 		exeName += ".exe"
 	}
 	triple := fmt.Sprintf("%s-%s", arch, sys)
-	for _, v := range versions {
-		binaryPath = filepath.Join(binaryDir, v.String(), triple, exeName)
+
+	// Check for existing binaries
+	for i := len(versions) - 1; i >= 0; i-- {
+		v := versions[i]
+		binaryPath := filepath.Join(binaryDir, v.String(), triple, exeName)
 		if isFile(binaryPath) {
-			err = os.Chmod(binaryPath, 0755)
-			return
+			os.Chmod(binaryPath, 0755)
+			return binaryPath, nil
 		}
 	}
-	// need download
-	resp, err := http.Get(updateVersionUrl)
+
+	// Download if not found
+	log.Println("Binary not found, starting download.")
+	versionUrl := fmt.Sprintf("%s/bundles/version", updateUrlBase)
+	resp, err := http.Get(versionUrl)
 	if err != nil {
-		return
+		return "", fmt.Errorf("failed to get latest version: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		err = fmt.Errorf("Request update version error: %s", resp.Status)
-		return
+		return "", fmt.Errorf("version request failed with status: %s", resp.Status)
 	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return
+		return "", fmt.Errorf("failed to read version response: %w", err)
 	}
-	log.Println("Binary doesn't exist, starting download.'")
+
 	latestVersion := strings.TrimSpace(string(body))
 	log.Printf("Latest version: %s\n", latestVersion)
+
 	subPath := filepath.Join(latestVersion, triple, exeName)
-	binaryPath = filepath.Join(binaryDir, subPath)
-	downloadUrl := fmt.Sprintf("%s/%s", downloadUrlPrefix, subPath)
+	binaryPath := filepath.Join(binaryDir, subPath)
+	downloadUrl := fmt.Sprintf("%s/bundles/%s", updateUrlBase, subPath)
+
 	log.Printf("Download url: %s, Binary path: %s", downloadUrl, binaryPath)
-	err = t.downloadBinary(downloadUrl, binaryPath)
-	if err != nil {
-		log.Fatal("Download failed ", err)
-		return
+	if err := t.downloadAndVerifyBinary(downloadUrl, binaryPath); err != nil {
+		return "", fmt.Errorf("download failed: %w", err)
 	}
-	err = os.Chmod(binaryPath, 0755)
+
 	log.Println("Download finished.")
-	return
+	return binaryPath, nil
 }
 
 func (t *NeoAi) Request(data []byte) (res []byte) {
 	t.mux.Lock()
+	defer t.mux.Unlock()
 	t.inPipeWriter.Write(data)
 	t.inPipeWriter.Write([]byte("\n"))
 	bytes, err := t.outReader.ReadBytes('\n')
-	t.mux.Unlock()
 	if err != nil {
 		res = t.emptyRes
 		return
@@ -228,32 +252,21 @@ func (t *NeoAi) Request(data []byte) (res []byte) {
 
 func (t *NeoAi) Close() {
 	log.Println("neoai closing... cleaning up...")
-	t.cmd.Process.Kill()
+	if t.cmd != nil && t.cmd.Process != nil {
+		t.cmd.Process.Kill()
+	}
 	t.inPipeWriter.Close()
 	t.outPipeWriter.Close()
 	t.inPipeReader.Close()
 	t.outPipeReader.Close()
 }
 
-func checkDir(path string) (isExist, isDir bool) {
-	info, err := os.Stat(path)
-	isExist = false
-	if os.IsNotExist(err) {
-		return
-	}
-	isExist = true
-	isDir = info.IsDir()
-	return
-}
-
 func isFile(path string) bool {
-	isExist, isDir := checkDir(path)
-	return isExist && !isDir
-}
-
-func isDir(path string) bool {
-	isExist, isDir := checkDir(path)
-	return isExist && isDir
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
 func parseArch(arch string) string {
