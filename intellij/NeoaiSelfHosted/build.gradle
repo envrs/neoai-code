@@ -1,0 +1,99 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.stream.Collectors
+
+plugins {
+    id 'java'
+    id "org.jetbrains.kotlin.jvm" version "1.4.32"
+    id 'org.jetbrains.intellij' version '1.13.3'
+    id 'org.jlleitschuh.gradle.ktlint' version "10.0.0"
+    id 'org.jlleitschuh.gradle.ktlint-idea' version "10.0.0"
+    id "com.github.sherter.google-java-format" version "0.9"
+}
+
+repositories {
+    mavenCentral()
+}
+
+group 'com.neoaiSelfHosted'
+version project.hasProperty('externalVersion') ? project.externalVersion : '1.39.0'
+
+sourceCompatibility = 9
+targetCompatibility = 9
+
+tasks.withType(KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "9"
+        freeCompilerArgs += "-Xjvm-default=enable"
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+apply plugin: "org.jlleitschuh.gradle.ktlint-idea"
+
+dependencies {
+    implementation(project(":Common"))
+    /*implementation(project(":NeoaiSelfHostedForMarketplace"))*/
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.4.32")
+}
+
+intellij {
+    version = '2020.2'
+    type = 'IC'
+    updateSinceUntilBuild = false
+    pluginName = 'NeoAi'
+}
+
+publishPlugin {
+    enabled = false
+}
+
+tasks.register("currentVersion") {
+    doLast {
+        println version
+    }
+}
+
+tasks.named("runIde").configure {
+    if (project.hasProperty('logFilePath')) {
+        systemProperty("NEOAI_LOG_FILE_PATH", logFilePath)
+    }
+}
+
+runIde {
+    environment("NEOAI_CHAT_DEV_SERVER_URL", "http://localhost:3000")
+}
+
+tasks {
+    compileKotlin {
+        dependsOn(ktlintFormat)
+    }
+}
+
+static def getIdeVersions(Project project) {
+    def ideVersions = project.hasProperty('ideVersions') ?
+            Arrays.asList(project.ideVersions.split(',')) :
+            ['IC-2020.2.1']
+    return ideVersions
+}
+
+runPluginVerifier {
+    ideVersions = getIdeVersions(project)
+    if (project.hasProperty("localPaths")) {
+        localPaths = Arrays.stream(project.localPaths.split(',')).map(File::new).collect(Collectors.toList())
+    }
+}
+
+sourceSets {
+    main {
+        java.srcDirs += "../NeoaiSelfHostedForMarketplace/src/main/java"
+    }
+}
+
+sourceSets {
+    main {
+        resources.srcDirs += "neoaiChat"
+    }
+}

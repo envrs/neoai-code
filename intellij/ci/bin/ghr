@@ -1,0 +1,299 @@
+#!/bin/bash
+
+# GitHub Release Helper (ghr) - A utility script for managing GitHub releases
+# Part of the IntelliJ plugin CI/CD pipeline
+
+# Enable stacktrace reporting
+set -e
+trap 'echo "Error occurred at line $LINENO. Command: $BASH_COMMAND"' ERR
+
+# Function to print stacktrace
+print_stacktrace() {
+    local frame=0
+    echo "Stacktrace:"
+    while caller $frame; do
+        ((frame++))
+    done
+}
+
+# Enhanced error handler with stacktrace
+error_handler() {
+    local exit_code=$?
+    echo "Script failed with exit code $exit_code"
+    print_stacktrace
+    exit $exit_code
+}
+
+trap error_handler ERR
+
+# Script configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$CI_DIR/.." && pwd)"
+VERSION_FILE="$PROJECT_ROOT/gradle.properties"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Print colored output
+print_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Show help
+show_help() {
+    cat << EOF
+GitHub Release Helper (ghr) - Utility for managing GitHub releases
+
+USAGE:
+    ghr <command> [options]
+
+COMMANDS:
+    create      Create a new GitHub release
+    list        List existing releases
+    delete      Delete a release
+    info        Show release information
+    assets      Manage release assets
+
+OPTIONS:
+    --version <version>    Specify version (default: from gradle.properties)
+    --tag <tag>           Specify tag name (default: v<version>)
+    --title <title>       Specify release title
+    --notes <notes>       Specify release notes
+    --draft               Create as draft
+    --prerelease          Create as prerelease
+    --latest              Mark as latest release
+    --help                Show this help message
+
+EXAMPLES:
+    ghr create                          # Create release for current version
+    ghr create --version 1.2.3          # Create release for specific version
+    ghr list                            # List all releases
+    ghr delete --tag v1.2.3             # Delete specific release
+    ghr info --tag v1.2.3               # Show release details
+
+EOF
+}
+
+# Check dependencies
+check_dependencies() {
+    if ! command -v gh &> /dev/null; then
+        print_error "GitHub CLI (gh) is not installed"
+        print_info "Please install it from: https://cli.github.com/"
+        exit 1
+    fi
+    
+    if ! gh auth status &> /dev/null; then
+        print_error "GitHub CLI is not authenticated"
+        print_info "Please run: gh auth login"
+        exit 1
+    fi
+}
+
+# Get current version from gradle.properties
+get_current_version() {
+    if [ ! -f "$VERSION_FILE" ]; then
+        print_error "Version file not found at $VERSION_FILE"
+        exit 1
+    fi
+    
+    local version=$(grep "version=" "$VERSION_FILE" | cut -d'=' -f2)
+    if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        print_error "Invalid version format: $version"
+        exit 1
+    fi
+    
+    echo "$version"
+}
+
+# Parse command line arguments
+parse_args() {
+    VERSION=""
+    TAG=""
+    TITLE=""
+    NOTES=""
+    DRAFT=false
+    PRERELEASE=false
+    LATEST=false
+    COMMAND=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --version)
+                VERSION="$2"
+                shift 2
+                ;;
+            --tag)
+                TAG="$2"
+                shift 2
+                ;;
+            --title)
+                TITLE="$2"
+                shift 2
+                ;;
+            --notes)
+                NOTES="$2"
+                shift 2
+                ;;
+            --draft)
+                DRAFT=true
+                shift
+                ;;
+            --prerelease)
+                PRERELEASE=true
+                shift
+                ;;
+            --latest)
+                LATEST=true
+                shift
+                ;;
+            --help)
+                show_help
+                exit 0
+                ;;
+            create|list|delete|info|assets)
+                COMMAND="$1"
+                shift
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Set defaults
+    if [ -z "$VERSION" ]; then
+        VERSION=$(get_current_version)
+    fi
+    
+    if [ -z "$TAG" ]; then
+        TAG="v$VERSION"
+    fi
+    
+    if [ -z "$TITLE" ]; then
+        TITLE="Release $VERSION"
+    fi
+}
+
+# Create release
+create_release() {
+    print_info "Creating GitHub release..."
+    print_info "Version: $VERSION"
+    print_info "Tag: $TAG"
+    print_info "Title: $TITLE"
+    
+    # Generate release notes if not provided
+    if [ -z "$NOTES" ]; then
+        print_info "Generating release notes from git log..."
+        NOTES="Release $VERSION
+
+$(git log --oneline --pretty=format:"- %s" "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')..HEAD" 2>/dev/null || echo "No changes since last release")"
+    fi
+    
+    # Build gh release command
+    local gh_args=("$TAG" --title "$TITLE" --notes "$NOTES")
+    
+    if [ "$DRAFT" = true ]; then
+        gh_args+=(--draft)
+    fi
+    
+    if [ "$PRERELEASE" = true ]; then
+        gh_args+=(--prerelease)
+    fi
+    
+    if [ "$LATEST" = true ]; then
+        gh_args+=(--latest)
+    fi
+    
+    # Create release
+    print_info "Executing: gh release create ${gh_args[*]}"
+    gh release create "${gh_args[@]}"
+    
+    print_success "Release created successfully!"
+    print_info "Release URL: https://github.com/$(git config --get remote.origin.url | sed 's/.*://;s/\.git$//')/releases/tag/$TAG"
+}
+
+# List releases
+list_releases() {
+    print_info "Listing GitHub releases..."
+    gh release list --limit 20
+}
+
+# Delete release
+delete_release() {
+    print_warning "Deleting release $TAG..."
+    read -p "Are you sure? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        gh release delete "$TAG" --yes
+        print_success "Release $TAG deleted successfully"
+    else
+        print_info "Deletion cancelled"
+    fi
+}
+
+# Show release info
+show_release_info() {
+    print_info "Release information for $TAG:"
+    gh release view "$TAG"
+}
+
+# Main execution
+main() {
+    # Parse arguments
+    parse_args "$@"
+    
+    # Check dependencies
+    check_dependencies
+    
+    # Execute command
+    case $COMMAND in
+        create)
+            create_release
+            ;;
+        list)
+            list_releases
+            ;;
+        delete)
+            delete_release
+            ;;
+        info)
+            show_release_info
+            ;;
+        assets)
+            print_error "Assets management not implemented yet"
+            exit 1
+            ;;
+        "")
+            print_error "No command specified"
+            show_help
+            exit 1
+            ;;
+        *)
+            print_error "Unknown command: $COMMAND"
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function with all arguments
+main "$@"

@@ -1,0 +1,161 @@
+<?xml version="1.0" ?>
+<idea-plugin require-restart="true" url="https://neoai.com">
+    <name>Neoai: AI Code Completion &amp; Chat in Java JS/TS Python &amp; More</name>
+    <id>com.neoai.Neoai</id>
+    <vendor email="support@neoai.com" url="https://neoai.com">Neoai</vendor>
+
+    <description><![CDATA[
+<p>
+    <a href="https://bit.ly/2UwHG4a"><img src="https://raster.shields.io/github/stars/codota/Neoai?style=social" alt="Github Repo"></a>&nbsp;
+    <a href="https://bit.ly/3pxpBRX"><img src="https://raster.shields.io/youtube/channel/views/UC3ZLFXRRmK3XbT5Oq0qPLqA?style=social" alt="Youtube Demo Video"></a>&nbsp;
+    <a href="https://bit.ly/3Jvz3Qa"><img src="https://raster.shields.io/twitter/follow/neoai?style=social" alt="Twitter Follow"></a>&nbsp;
+</p>
+<h2>AI assistant for software developers</h2>
+<h4 id="whats-neoai">What is  Neoai?</h4>
+<p> Neoai is an AI code assistant that makes you a better developer, helping you to increase your development velocity with real-time <b>code completions,  chat, and code generation </b> in all the most popular coding languages and IDEs.</p>
+<p>Whether you call it <b>IntelliSense, intelliCode, autocomplete, AI-assisted code completion, AI-powered code completion, AI copilot, AI code snippets, code suggestion, code prediction, code hinting, content assist, unit test generation,</b> or <b>documentation generation</b>, using Neoai can massively impact your coding velocity, significantly cutting down your coding time.</p>
+<br/>
+<h4 id="disclaimer">This plugin is NOT for <u>Neoai Enterprise self-hosted</u> customers.</h4>
+<p>
+    <p> This plugin is for Neoai’s Starter (free), Pro and <b>Enterprise SaaS</b> users only.</p>
+    <p>Neoai <b>Enterprise users with the self-hosted setup</b> should use the Neoai Enterprise plugin in the <a href="https://plugins.jetbrains.com/plugin/21531?utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">JetBrains marketplace</a>..</p>
+    <p>Learn more about Neoai Enterprise and self hosting options <a href="https://www.neoai.com/enterprise?utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">here</a>,
+    or <a href="https://www.neoai.com/?expert&utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">talk to a Neoai Enterprise expert</a>..</p>
+</p>
+<br/>
+
+<h4> Ask away, Neoai Chat is here to answer (Beta) </h4>
+    <p>Neoai Chat is a private and secure AI assistant that’s been trained on permissible open-source code only, and is always available to answer any of your questions right in your IDE. </p>
+    <p> With Neoai Chat you can basically ask any question regarding code, for example, you can generate code that performs a specific task, generate tests for specific code, generate documentation for existing code, explain the purpose of legacy code, and way more.</p>
+    <p>Want to join the Beta? <a href="https://www.neoai.com/?chat-beta&utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">Sign up here </a></p>
+<br/>
+
+<h4>Under the hood / Neoai technology</h4>
+<p>
+    Neoai is powered by multiple language-specialized machine learning models that were pre-trained from the ground up on code. All of Neoai’s AI models are trained on open-source code with permissive licenses. Neoai's AI completions can be run on a developer's laptop, on a server behind your firewall, or in the cloud.
+</p>
+<br />
+<h4 id="code-privacy">Complete code privacy</h4>
+<p>
+    Your code always remains private.
+</p>
+<p>
+    Neoai NEVER stores or shares any of your code. Any action that shares your code with the Neoai servers for the purpose of training team models requires explicit opt-in. Neoai does not retain any user code beyond the immediate time frame required for training models. Private code models created by Neoai Enterprise are only accessible by your team members.
+</p>
+<br />
+<h4>Trained on open-source code with permissive licenses</h4>
+<p>
+    Neoai only uses open-source code with permissive licenses for our Public Code trained AI model (MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, Unlicense, CC0-1.0, CC-BY-3.0, CC-BY-4.0, RSA-MD, 0BSD, WTFPL, ISC). Whether you’re using Neoai’s Pro plan or our Basic plan, your code, and AI data are NEVER used to train any models other than private code models.
+</p>
+<p>
+    <a href="https://www.neoai.com/code-privacy?utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">Learn more</a>
+</p>
+<br />
+<h4 id="neoai-pro">Neoai Pro - whole line, full function, and natural language to code completions</h4>
+<p>
+    You’re in control - As you type, Neoai Pro serves whole-line, full-function, and even natural language to code completions. You can accept your whole line completion or keep typing to get more real-time alternatives that keep adapting to your code context.
+</p>
+<p>
+<a href="https://www.neoai.com/pricing/landing?utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">Start a Free Neoai Pro 14-day trial</a>
+</p>
+<p>
+    <strong>Whole line completions - </strong>Neoai serves whole line completions as you code and you can complete an entire line of code with a single keystroke.
+</p>
+<p>
+    <strong>Full-function completions - </strong>With just a hint, Neoai generates your entire function without ever having to exit your editor.
+</p>
+<p>
+    <strong>Natural language to code completions - </strong>Describe the script or function you’re looking for, and Neoai will suggest the right code for you to use.
+<p>
+    <a href="https://www.neoai.com/pricing/landing?utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">Start a free trial</a>
+</p>
+<br />
+<h4 id="neoai-enterprise">Neoai Enterprise</h4>
+<p>
+    Everything Neoai Pro & much more - The perfect solution for businesses with custom needs:
+</p>
+<p>
+    <strong>Automate Remote Knowledge Sharing - </strong>Share knowledge effortlessly across countries and time zones. Neoai learns your code patterns, providing expert guidance to every member of your team at any time of day.
+</p>
+<br />
+<p>
+    <strong>Improve Code Quality & Consistency - </strong>Neoai Improves code consistency across your entire project, suggesting completions that align with your best practices for code that’s easier to read, manage, and maintain.
+</p>
+<br />
+<p>
+    <strong>Accelerate Developer Onboarding - </strong>Neoai’s AI assistant helps speed new team members through the onboarding process with instant inline coding guidance minimizing the training burden placed on senior developers.
+</p>
+<br />
+<p>
+    <strong>Reduce Code Review Iterations - </strong>Your Neoai AI assistant will help you get the right code the first time. Neoai provides code guidance that’s consistent with your team’s best practices, saving costly and frustrating code review iterations.
+</p>
+<br />
+<p>
+    <strong>Self-hosting - </strong>Host Neoai locally to comply with your business’ security requirements.
+</p>
+<br />
+<p>
+    <strong>Private code repository models - </strong>Neoai Enterprise offers custom models based on multiple repositories. Connect your GitHub/GitLab/Bitbucket repositories and train your own private AI model to get personalized code completions that match your coding style & patterns.
+</p>
+<br />
+<p>
+    <a href="https://www.neoai.com//pricing?utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">Contact us</a> for more information
+</p>
+<h4 id="faq">FAQ</h4>
+<p>
+    Something not working the way you hoped? <a href="https://www.neoai.com//faq?utm_source=ide_marketplace&utm_medium=organic&utm_campaign=jetbrains_marketplace">Neoai Support</a> is always happy to help. Feel free to contact us anytime at support@neoai.com
+</p>
+
+<p>
+    More resources: <a href="https://www.neoai.com/blog">Neoai blog</a>, <a href="https://www.neoai.com/academy">Neoai Academy</a> <a href="https://www.neoai.com/faq">Questions? Check out our FAQ</a>, <a href="https://www.neoai.com/pricing">Learn more about our premium plans</a>.
+</p>
+]]>
+    </description>
+
+    <projectListeners>
+      <listener class="com.neoai.chat.ChatToolWindowListener" topic="com.intellij.openapi.wm.ex.ToolWindowManagerListener" />
+    </projectListeners>
+
+    <change-notes>Neoai is always evolving. Most updates are in the binary sidecar.</change-notes>
+    <idea-version since-build="202.6397.94"/>
+    <depends optional="true" config-file="common-plugin.xml">com.intellij.modules.lang</depends>
+    <extensions defaultExtensionNs="com.intellij">
+        <preloadingActivity implementation="com.neoai.Initializer"/>
+        <postStartupActivity implementation="com.neoai.Initializer"/>
+
+        <statusBarWidgetFactory implementation="com.neoai.statusBar.StatusBarProvider" id="com.neoai.statusBar.StatusBarProvider"/>
+        <completion.contributor language="any"
+                                implementationClass="com.neoai.intellij.completions.NeoaiCompletionContributor"
+                                order="first"/>
+        <statusBarWidgetFactory implementation="com.neoai.statusBar.StatusBarPromotionProvider" id="com.neoai.statusBar.StatusBarPromotionProvider"/>
+        <fileType name="Neoai project model file" implementationClass="com.neoai.NeoaiProjectModelFileType"
+                  extensions="neoai,.neoai,neoai.model,.neoai.model,model,.model"/>
+        <fileType name="Neoai ignore file" implementationClass="com.neoai.NeoaiIgnoreFileType"
+                  extensions="neoaiignore"/>
+        <preloadingActivity implementation="com.neoai.general.GettingStartedManager"/>
+
+        <applicationService serviceImplementation="com.neoai.general.BrowserUtilsService"/>
+        <applicationService serviceImplementation="com.neoai.lifecycle.pushtosignin.PushToSignIn"/>
+
+        <toolWindow factoryClass="com.neoai.chat.NeoaiChatWebViewFactory" id="Neoai Chat"
+          anchor="right" canCloseContents="false" icon="/icons/neoai-tool-window-icon.svg" />
+        <intentionAction>
+          <className>com.neoai.chat.actions.NeoaiQuickFixAction</className>
+          <category>Neoai intentions</category>
+        </intentionAction>
+        <codeInsight.inlayProvider language="JAVA" implementationClass="com.neoai.chat.lens.NeoaiLensJavaProvider" />
+        <codeInsight.inlayProvider language="TypeScript" implementationClass="com.neoai.chat.lens.NeoaiLensTypescriptProvider" />
+        <codeInsight.inlayProvider language="Python" implementationClass="com.neoai.chat.lens.NeoaiLensPythonProvider" />
+        <codeInsight.inlayProvider language="kotlin" implementationClass="com.neoai.chat.lens.NeoaiLensKotlinProvider" />
+        <codeInsight.inlayProvider language="PHP" implementationClass="com.neoai.chat.lens.NeoaiLensPhpProvider" />
+        <codeInsight.inlayProvider language="Rust" implementationClass="com.neoai.chat.lens.NeoaiLensRustProvider"  />
+    </extensions>
+    <actions>
+        <action
+            id="com.neoaiCommon.actions.ManualLoginAction"
+            class="com.neoaiCommon.actions.ManualLoginAction"
+            text="Neoai: Sign in using auth token"
+            description="Sign in using auth token">
+        </action>
+    </actions>
+</idea-plugin>

@@ -1,0 +1,62 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+plugins {
+    id 'java'
+    id "org.jetbrains.kotlin.jvm" version "1.4.32"
+    id 'org.jetbrains.intellij' version '1.13.3'
+    id 'org.jlleitschuh.gradle.ktlint' version "10.0.0"
+    id 'org.jlleitschuh.gradle.ktlint-idea' version "10.0.0"
+    id "com.github.sherter.google-java-format" version "0.9"
+}
+
+repositories {
+    mavenCentral()
+}
+
+group 'com.neoaiCommon'
+version project.hasProperty('externalVersion') ? project.externalVersion : '1.0.6'
+
+sourceCompatibility = 9
+targetCompatibility = 9
+
+tasks.withType(KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "9"
+        freeCompilerArgs += "-Xjvm-default=enable"
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+apply plugin: "org.jlleitschuh.gradle.ktlint-idea"
+
+dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.4.32")
+    implementation 'org.jetbrains:annotations:24.0.0'
+    implementation 'org.jetbrains.intellij.plugins:idea-platform-api:2020.2'
+    implementation 'org.jetbrains.intellij.plugins:idea-platform-impl:2020.2'
+}
+
+intellij {
+    version = '2020.2'
+    type = 'IC'
+    updateSinceUntilBuild = false
+    pluginName = 'NeoAi'
+}
+
+def channelName = project.hasProperty('channel') ? project.channel : 'alpha'
+
+sourceSets {
+    main {
+        java.srcDirs += "src/main/java"
+        java.srcDirs += "channels/${channelName}"
+    }
+}
+
+tasks {
+    compileKotlin {
+        dependsOn(ktlintFormat)
+    }
+}
