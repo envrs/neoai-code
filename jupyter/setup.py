@@ -26,7 +26,7 @@ setuptools.setup(
     name="jupyter_neoai",
     version=get_version("src/jupyter_neoai/_version.py"),
     url="https://github.com/neopilot-ai/neoai-code/jupyter",
-    author="Md Sulaiman",
+    author="MD SULAIMAN",
     long_description=readme,
     long_description_content_type="text/x-rst",
     author_email="dev.sulaiman@icloud.com",
@@ -40,6 +40,7 @@ setuptools.setup(
         "jupyter_core",
         "nbconvert",
         "notebook >=4.2",
+        "colorama",
     ],
     python_requires=">=3.5",
     classifiers=[
