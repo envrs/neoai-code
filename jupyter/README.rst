@@ -68,7 +68,38 @@ Then, issue
 where ``<output source directory>`` is the output of the first python
 command.
 
-Tips
-------------
+Usage
+-----
 - A shortcut is added to let you switch between Jupyter raw completion and NeoAi auto-competion. Just enter ``shift`` + ``space`` when you want raw completion of Jupyter :)
-- Remote auto-completion server is also supported. You may want this to speed up the completion request handing. Or maybe your company want to deploy a compeltion server cluster that services everyone. Refer https://github.com/neopilot-ai/neoai-code/jupyter to learn how to deploy remote server.
+- Remote auto-completion server is also supported. You may want this to speed up the completion request handing. Or maybe your company want to deploy a compeltion server cluster that services everyone. Read following to learn how to deploy remote server.
+
+Uninstallation
+--------------
+To uninstall NeoAi plugin from mac/linux run the following commands:
+
+::
+
+    jupyter nbextension uninstall --py jupyter_neoai
+    pip3 uninstall jupyter-neoai
+
+Remote Completion Server Deployment
+-----------------------------------
+It's useful to deploy a remote neoai server if you don't want to occupy too much local resources. You can build, deploy and config a remote neoai server according to the following steps.
+
+Build Server Image
+~~~~~~~~~~~~~~~~~~
+The Go build is handled by the multi-stage Dockerfile.
+Simply run ``bash build-image.sh`` to build the docker image.
+
+Start Server
+~~~~~~~~~~~~
+Simply issue ``bash start-server.sh``.
+
+Configure Under Nbextensions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Please `install Nbextensions <https://jupyter-contrib-nbextensions.readthedocs.io/en/latest/install.html>`__ if you haven't installed.
+Open Jupyter Notebook and go to the Nbextensions setting page, click **Jupyter NeoAi**, scroll down and fill in the remote server url.
+
+Stop Server
+~~~~~~~~~~~
+Simply issue ``bash stop-server.sh``.

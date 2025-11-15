@@ -1,22 +1,21 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
+	"time"
 
 	"github.com/neopilot-ai/neoai-code/jupyter/go/pkg/neoai"
 )
 
 func main() {
 	var libBaseDir string
-
 	var port int
 
 	flag.StringVar(&libBaseDir, "libBaseDir", "./", "base directory of neoai binaries")
@@ -25,29 +24,71 @@ func main() {
 
 	tn, err := neoai.NewNeoAi(libBaseDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to initialize NeoAi: %v", err)
+	}
+	defer tn.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/neoai", neoaiHandler(tn))
+
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: loggingMiddleware(mux),
 	}
 
-	http.HandleFunc("/neoai", func(w http.ResponseWriter, r *http.Request) {
-		// fix cross-domain request problem
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		urlStr, _ := url.QueryUnescape(r.URL.String())
-		index := strings.Index(urlStr, "=")
-		data := []byte(urlStr[index+1:])
-		_, err = w.Write(tn.Request(data))
-	})
-
-	numSignals := 3
-	ch := make(chan os.Signal, numSignals)
-
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-
+	// Graceful shutdown
+	idleConnsClosed := make(chan struct{})
 	go func() {
-		signalType := <-ch
-		signal.Stop(ch)
-		tn.Close()
-		log.Printf("Signal Type: %s\n", signalType)
-		os.Exit(0)
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		<-sigint
+
+		log.Println("Shutdown signal received, shutting down server...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("HTTP server shutdown error: %v", err)
+		}
+		close(idleConnsClosed)
 	}()
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
+
+	log.Printf("Starting server on port %d", port)
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatalf("HTTP server ListenAndServe error: %v", err)
+	}
+
+	<-idleConnsClosed
+	log.Println("Server stopped.")
+}
+
+func neoaiHandler(tn *neoai.NeoAi) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS header
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		data := r.URL.Query().Get("data")
+		if data == "" {
+			http.Error(w, "Missing 'data' query parameter", http.StatusBadRequest)
+			return
+		}
+
+		responseBytes := tn.Request([]byte(data))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(responseBytes)
+	}
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s", r.Method, r.RequestURI, time.Since(start))
+	})
 }

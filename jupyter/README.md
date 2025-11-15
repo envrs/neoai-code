@@ -96,13 +96,11 @@ Please make sure to update tests as appropriate.
 ## Remote Completion Server Deployment
 It's useful to deploy a remote neoai server if you don't want to occupy too much local resources. You can build, deploy and config a remote neoai server according to the following steps.
 
-**NOTE:** You need to install jupyter-neoai with `pip3 install https://github.com/neopilot-ai/neoai-code/jupyter/archive/master.zip`, because the version which fix this plugin with remote server problem haven't been relased to PyPi.
 ### Build Server Image
 **I have uploaded an image to Docker Hub, skip this section if you prefer to use it directly.**
-* Install the golang (recommended version is 1.13 - 1.14)
-* Issue `go get -v github.com/neopilot-ai/neoai-code/jupyter/go/cmd`
-* Issue `cd $HOME/go/src/github.com/neopilot-ai/neoai-code/jupyter`
-* Issue `bash ./build-image.sh`
+* The Go build is handled by the multi-stage Dockerfile.
+* Simply run `bash build-image.sh` to build the docker image.
+
 ### Start Server
 **Change the image name in this bash script to `wuwenmin1991/neoai-server:1.0` if you did't build your own image**
 * Simply issue `bash start-server.sh`
