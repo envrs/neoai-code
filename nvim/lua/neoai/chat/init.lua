@@ -6,11 +6,19 @@ local api = vim.api
 local apply = require("neoai.chat.apply")
 local config = require("neoai.config")
 local lsp = require("neoai.lsp")
+local platform = require("neoai.platform")
 
 local M = { enabled = false }
 
-local CHAT_STATE_FILE = utils.module_dir() .. "/chat_state.json"
-local CHAT_SETTINGS_FILE = utils.module_dir() .. "/chat_settings.json"
+local function get_chat_data_dir()
+    local data_dir = platform.get_data_dir()
+    local chat_dir = data_dir .. "/chat"
+    vim.fn.mkdir(chat_dir, "p")
+    return chat_dir
+end
+
+local CHAT_STATE_FILE = get_chat_data_dir() .. "/chat_state.json"
+local CHAT_SETTINGS_FILE = get_chat_data_dir() .. "/chat_settings.json"
 
 local chat_state = nil
 local chat_settings = nil

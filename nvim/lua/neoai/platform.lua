@@ -46,6 +46,30 @@ function M.get_cache_dir()
     return cache_dir
 end
 
+-- Get data directory
+function M.get_data_dir()
+    local data_dir
+    
+    if M.is_windows() then
+        data_dir = vim.fn.expand('$APPDATA') .. '/NeoAI'
+    elseif M.is_mac() then
+        data_dir = vim.fn.expand('$HOME') .. '/Library/Application Support/neoai'
+    else
+        -- Linux and other Unix-like systems
+        local xdg_data = vim.fn.expand('$XDG_DATA_HOME')
+        if xdg_data and xdg_data ~= '' then
+            data_dir = xdg_data .. '/neoai'
+        else
+            data_dir = vim.fn.expand('$HOME') .. '/.local/share/neoai'
+        end
+    end
+    
+    -- Create directory if it doesn't exist
+    vim.fn.mkdir(data_dir, 'p')
+    
+    return data_dir
+end
+
 -- Get platform information
 function M.get_platform_info()
     local info = {

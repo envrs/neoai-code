@@ -68,23 +68,25 @@ fn copy_assets() {
 fn validate_files() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let manifest_path = Path::new(&manifest_dir);
-    
+
     // Check for icon.png
     let icon_path = manifest_path.join("icon.png");
     if !icon_path.exists() {
-        println!("Warning: icon.png not found, will use fallback icon");
+        println!("cargo:warning=icon.png not found. The application will use a fallback icon. Consider converting icon.svg to icon.png for a proper icon.");
     }
-    
+
     // Check for index.html
     let html_path = manifest_path.join("index.html");
     if !html_path.exists() {
-        panic!("index.html is required but not found");
+        compile_error!("index.html not found. Please build the web assets and place them in the `nvim/chat` directory. See `nvim/chat/assets/README.md` for more information.");
     }
-    
+
     // Check for assets directory
     let assets_path = manifest_path.join("assets");
     if !assets_path.exists() {
-        println!("Warning: assets directory not found, creating it");
-        let _ = fs::create_dir_all(&assets_path);
+        println!("cargo:warning=assets directory not found, creating it.");
+        if let Err(e) = fs::create_dir_all(&assets_path) {
+            eprintln!("Warning: Failed to create assets directory: {}", e);
+        }
     }
 }

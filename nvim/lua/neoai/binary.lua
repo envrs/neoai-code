@@ -6,31 +6,30 @@ local semver = require("neoai.third_party.semver.semver")
 local utils = require("neoai.utils")
 local NeoaiBinary = {}
 local config = require("neoai.config")
+local platform = require("neoai.platform")
 
 local api_version = "4.4.223"
 local binaries_path = utils.module_dir() .. "/binaries"
 
 local function arch_and_platform()
-	local os_uname = uv.os_uname()
-
-	if os_uname.sysname == "Linux" and os_uname.machine == "x86_64" then
+	local platform_info = platform.get_platform_info()
+	if platform_info.os == "linux" and platform_info.arch == "x64" then
 		return "x86_64-unknown-linux-musl"
-	elseif os_uname.sysname == "Linux" and os_uname.machine == "aarch64" then
+	elseif platform_info.os == "linux" and platform_info.arch == "arm64" then
 		return "aarch64-unknown-linux-musl"
-	elseif os_uname.sysname == "Darwin" and os_uname.machine == "arm64" then
+	elseif platform_info.os == "mac" and platform_info.arch == "arm64" then
 		return "aarch64-apple-darwin"
-	elseif os_uname.sysname == "Darwin" then
+	elseif platform_info.os == "mac" then
 		return "x86_64-apple-darwin"
-	elseif os_uname.sysname == "Windows_NT" and os_uname.machine == "x86_64" then
+	elseif platform_info.os == "windows" and platform_info.arch == "x64" then
 		return "x86_64-pc-windows-gnu"
-	elseif os_uname.sysname == "Windows_NT" then
+	elseif platform_info.os == "windows" then
 		return "i686-pc-windows-gnu"
 	end
 end
 
 local function binary_name()
-	local os_uname = uv.os_uname()
-	if os_uname.sysname == "Windows_NT" then
+	if platform.is_windows() then
 		return "NeoAi.exe"
 	else
 		return "NeoAi"
