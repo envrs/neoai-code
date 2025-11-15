@@ -68,7 +68,13 @@ require("neoai").setup({
   completion = {
     trigger_length = 3,
     max_suggestions = 5,
-    debounce_ms = 500,
+    debounce_ms = 300,
+    exclude_filetypes = {
+      "gitcommit", "gitrebase", "svn", "hgcommit", "diff", "patch",
+      "help", "man", "qf", "startify", "nerdtree", "NvimTree",
+      "neo-tree", "alpha", "dashboard", "TelescopePrompt", "WhichKey",
+      "lspinfo", "checkhealth", "log", "markdown", "text", "rst",
+    },
   },
   chat = {
     max_messages = 50,
@@ -87,11 +93,84 @@ require("neoai").setup({
 | `features.auto_complete` | boolean | `true` | Enable auto completion |
 | `features.workspace_integration` | boolean | `true` | Enable workspace integration |
 | `features.lsp_integration` | boolean | `true` | Enable LSP integration |
+| `keymaps.enabled` | boolean | `true` | Enable default keymaps |
+| `keymaps.override_conflicts` | boolean | `false` | Override conflicting keymaps |
+| `keymaps.show_conflict_warnings` | boolean | `true` | Show conflict warnings |
+| `keymaps.custom_keymaps` | table | `{}` | Custom keymap definitions |
 | `completion.trigger_length` | number | `3` | Minimum characters to trigger completion |
 | `completion.max_suggestions` | number | `5` | Maximum number of suggestions |
-| `completion.debounce_ms` | number | `500` | Debounce time for auto-completion |
+| `completion.debounce_ms` | number | `300` | Debounce time for auto-completion |
+| `completion.exclude_filetypes` | table | `see below` | File types to exclude from completion |
 | `chat.max_messages` | number | `50` | Maximum messages in chat history |
 | `chat.context_lines` | number | `20` | Number of context lines for chat |
+
+### Default Excluded File Types
+
+By default, NeoAI excludes completion for the following file types to avoid interference with specialized buffers and improve performance:
+
+**Version Control**: `gitcommit`, `gitrebase`, `svn`, `hgcommit`, `diff`, `patch`
+**Documentation**: `help`, `man`, `markdown`, `text`, `rst`
+**UI/Plugin Buffers**: `nerdtree`, `NvimTree`, `neo-tree`, `alpha`, `dashboard`, `startify`
+**Telescope/WhichKey**: `TelescopePrompt`, `TelescopeResults`, `WhichKey`
+**LSP/Diagnostics**: `lspinfo`, `null-ls-info`, `checkhealth`, `health`, `log`, `qf`
+**Other**: `git`, `gitconfig`, `fugitive`, `fugitiveblame`, `vim-plug`
+
+You can customize this list by setting your own `exclude_filetypes` array in the configuration.
+
+### Keymap Configuration
+
+NeoAI provides flexible keymap configuration to prevent conflicts with other plugins:
+
+```lua
+require("neoai").setup({
+  keymaps = {
+    enabled = true,                    -- Enable default keymaps
+    override_conflicts = false,        -- Don't override existing keymaps
+    show_conflict_warnings = true,     -- Show warnings for conflicts
+    custom_keymaps = {                 -- Add your own keymaps
+      {
+        mode = "n",
+        lhs = "<leader>ai",
+        rhs = function()
+          require("neoai.chat").toggle()
+        end,
+        opts = { desc = "NeoAI Chat", silent = true },
+      },
+    },
+  },
+})
+```
+
+#### Keymap Conflict Management
+
+NeoAI automatically detects keymap conflicts and provides several options:
+
+- **Default behavior**: Warns about conflicts and skips conflicting keymaps
+- **Override mode**: Set `override_conflicts = true` to override existing keymaps
+- **Silent mode**: Set `show_conflict_warnings = false` to suppress warnings
+- **Disabled mode**: Set `enabled = false` to disable all default keymaps
+
+#### Keymap Commands
+
+Check keymap status:
+```vim
+:NeoaiKeymaps status
+```
+
+Check for conflicts:
+```vim
+:NeoaiKeymaps check
+```
+
+Clear all NeoAI keymaps:
+```vim
+:NeoaiKeymaps clear
+```
+
+Re-setup keymaps:
+```vim
+:NeoaiKeymaps setup
+```
 
 ## Usage
 
@@ -125,6 +204,8 @@ Or use the keymap in insert mode:
 ```vim
 <C-g>
 ```
+
+**Note**: NeoAI automatically hides its completion suggestions when the built-in popup menu (pum) is visible, ensuring no interference with native Vim completion or other completion plugins.
 
 ### Workspace Integration
 

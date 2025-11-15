@@ -17,11 +17,77 @@ M.DEFAULT_CONFIG = {
         border = "single",
     },
     
+    -- Keymaps configuration
+    keymaps = {
+        enabled = true,
+        override_conflicts = false,
+        show_conflict_warnings = true,
+        custom_keymaps = {},
+    },
+    
+    -- Plugin behavior
+    auto_start = true,
+    auto_save_config = true,
+    debug_mode = false,
+    
+    -- Performance settings
+    performance = {
+        max_concurrent_requests = 3,
+        request_timeout = 30000,
+        cache_enabled = true,
+        cache_ttl = 3600,
+    },
+    
     -- Completion settings
     completion = {
         enabled = true,
         max_tokens = 100,
         temperature = 0.7,
+        debounce_ms = 300,
+        exclude_filetypes = {
+            "gitcommit",
+            "gitrebase",
+            "svn",
+            "hgcommit",
+            "cvsrc",
+            "cvs",
+            ".cvsrc",
+            "svncommit",
+            "hg",
+            "diff",
+            "patch",
+            "orig",
+            "rej",
+            "commit",
+            "tag",
+            "git",
+            "gitconfig",
+            "help",
+            "man",
+            "qf",
+            "loc",
+            "startify",
+            "vim-plug",
+            "fugitive",
+            "fugitiveblame",
+            "nerdtree",
+            "NvimTree",
+            "neo-tree",
+            "Outline",
+            "alpha",
+            "dashboard",
+            "TelescopePrompt",
+            "TelescopeResults",
+            "WhichKey",
+            "lspinfo",
+            "null-ls-info",
+            "checkhealth",
+            "health",
+            "log",
+            "markdown",
+            "text",
+            "rst",
+        },
     },
     
     -- Feature flags

@@ -5,22 +5,31 @@ local user_commands = require("neoai.user_commands")
 
 local M = {}
 
--- Default keymaps
+-- Keymap storage for cleanup
+local neoai_keymaps = {}
+
+-- Default keymap definitions
 local default_keymaps = {
     -- Chat interface
     {
         mode = "n",
         lhs = "<leader>ac",
-        rhs = consts.COMMANDS.CHAT,
-        opts = { desc = "NeoAI Chat" },
+        rhs = function()
+            local chat = require("neoai.chat")
+            chat.toggle()
+        end,
+        opts = { desc = "NeoAI Chat", silent = true },
     },
     
     -- Trigger completion
     {
         mode = "i",
         lhs = "<C-g>",
-        rhs = consts.COMMANDS.COMPLETE,
-        opts = { desc = "NeoAI Complete" },
+        rhs = function()
+            local completion = require("neoai.completion")
+            completion.trigger_completion()
+        end,
+        opts = { desc = "NeoAI Complete", silent = true },
     },
     
     -- Toggle features
@@ -40,101 +49,252 @@ local default_keymaps = {
                 end
             end)
         end,
-        opts = { desc = "NeoAI Toggle Feature" },
+        opts = { desc = "NeoAI Toggle Feature", silent = true },
     },
     
     -- Show status
     {
         mode = "n",
         lhs = "<leader>as",
-        rhs = consts.COMMANDS.STATUS,
-        opts = { desc = "NeoAI Status" },
+        rhs = function()
+            user_commands.execute(consts.COMMANDS.STATUS, {})
+        end,
+        opts = { desc = "NeoAI Status", silent = true },
     },
     
     -- Configuration
     {
         mode = "n",
         lhs = "<leader>acfg",
-        rhs = consts.COMMANDS.CONFIG .. " show",
-        opts = { desc = "NeoAI Show Config" },
+        rhs = function()
+            user_commands.execute(consts.COMMANDS.CONFIG, { args = "show" })
+        end,
+        opts = { desc = "NeoAI Show Config", silent = true },
     },
 }
 
--- User keymaps registry
-local user_keymaps = {}
+-- Check if keymap would conflict
+local function has_keymap_conflict(mode, lhs, buffer)
+    local keymaps = vim.api.nvim_buf_get_keymap(buffer or 0, mode)
+    for _, keymap in ipairs(keymaps) do
+        if keymap.lhs == lhs then
+            return true, keymap
+        end
+    end
+    
+    -- Also check global keymaps
+    if not buffer then
+        local global_keymaps = vim.api.nvim_get_keymap(mode)
+        for _, keymap in ipairs(global_keymaps) do
+            if keymap.lhs == lhs then
+                return true, keymap
+            end
+        end
+    end
+    
+    return false
+end
 
--- Setup default keymaps
+-- Safe keymap setter with conflict detection
+local function safe_set_keymap(mode, lhs, rhs, opts, buffer)
+    local keymap_config = config.get().keymaps or {}
+    local has_conflict, existing_keymap = has_keymap_conflict(mode, lhs, buffer)
+    
+    if has_conflict then
+        -- Check if it's our own keymap
+        local is_ours = existing_keymap.desc and existing_keymap.desc:match("NeoAI")
+        if not is_ours then
+            if not keymap_config.override_conflicts then
+                if keymap_config.show_conflict_warnings ~= false then
+                    vim.notify(
+                        string.format("NeoAI: Keymap conflict detected - %s %s is already mapped to '%s'", 
+                            mode, lhs, existing_keymap.desc or existing_keymap.rhs or "unknown"),
+                        vim.log.levels.WARN
+                    )
+                end
+                return false
+            end
+        end
+    end
+    
+    -- Set the keymap
+    local success, err = pcall(function()
+        if buffer then
+            vim.api.nvim_buf_set_keymap(buffer or 0, mode, lhs, "", {
+                callback = rhs,
+                desc = opts.desc,
+                silent = opts.silent ~= false,
+                noremap = opts.noremap ~= false,
+                expr = opts.expr or false,
+                nowait = opts.nowait or false,
+            })
+        else
+            vim.keymap.set(mode, lhs, rhs, vim.tbl_extend("force", opts, {
+                buffer = buffer,
+            }))
+        end
+    end)
+    
+    if success then
+        -- Store for cleanup
+        table.insert(neoai_keymaps, {
+            mode = mode,
+            lhs = lhs,
+            buffer = buffer,
+        })
+        return true
+    else
+        vim.notify("NeoAI: Failed to set keymap " .. lhs .. ": " .. err, vim.log.levels.ERROR)
+        return false
+    end
+end
+
+-- Setup keymaps with conflict detection
 function M.setup()
-    -- Clear existing keymaps
+    -- Check if keymaps are enabled
+    local keymap_config = config.get().keymaps or {}
+    if not keymap_config.enabled then
+        vim.notify("NeoAI: Keymaps are disabled", vim.log.levels.DEBUG)
+        return
+    end
+    
+    -- Clear existing NeoAI keymaps first
     M.clear()
+    
+    local setup_count = 0
+    local conflict_count = 0
     
     -- Apply default keymaps
     for _, keymap in ipairs(default_keymaps) do
-        M.set(keymap.mode, keymap.lhs, keymap.rhs, keymap.opts)
+        if safe_set_keymap(keymap.mode, keymap.lhs, keymap.rhs, keymap.opts) then
+            setup_count = setup_count + 1
+        else
+            conflict_count = conflict_count + 1
+        end
     end
     
-    -- Apply user keymaps
-    for _, keymap in ipairs(user_keymaps) do
-        M.set(keymap.mode, keymap.lhs, keymap.rhs, keymap.opts)
+    -- Apply custom keymaps from config
+    if keymap_config.custom_keymaps then
+        for _, keymap in ipairs(keymap_config.custom_keymaps) do
+            if safe_set_keymap(keymap.mode, keymap.lhs, keymap.rhs, keymap.opts) then
+                setup_count = setup_count + 1
+            else
+                conflict_count = conflict_count + 1
+            end
+        end
     end
     
-    vim.notify("NeoAI: Keymaps setup complete", vim.log.levels.DEBUG)
-end
-
--- Set a keymap
-function M.set(mode, lhs, rhs, opts)
-    opts = opts or {}
+    local message = string.format("NeoAI: Keymaps setup complete - %d set, %d conflicts", 
+        setup_count, conflict_count)
     
-    -- Handle function RHS
-    if type(rhs) == "function" then
-        vim.keymap.set(mode, lhs, rhs, opts)
+    if conflict_count > 0 then
+        vim.notify(message, vim.log.levels.WARN)
     else
-        -- Handle command RHS
-        local cmd = type(rhs) == "string" and rhs or consts.COMMANDS.CHAT
-        vim.keymap.set(mode, lhs, function()
-            user_commands.execute(cmd:gsub("^" .. consts.COMMANDS.CHAT .. " ", ""), { args = cmd:match("^.+%s+(.+)$") })
-        end, opts)
+        vim.notify(message, vim.log.levels.DEBUG)
     end
 end
 
--- Remove a keymap
-function M.remove(mode, lhs)
-    vim.keymap.del(mode, lhs)
+-- Add a custom keymap
+function M.add_keymap(keymap)
+    if not keymap.mode or not keymap.lhs or not keymap.rhs then
+        vim.notify("NeoAI: Invalid keymap definition", vim.log.levels.ERROR)
+        return false
+    end
+    
+    return safe_set_keymap(keymap.mode, keymap.lhs, keymap.rhs, keymap.opts, keymap.buffer)
+end
+
+-- Remove a specific keymap
+function M.remove_keymap(mode, lhs, buffer)
+    local success = pcall(function
+        if buffer then
+            vim.api.nvim_buf_del_keymap(buffer or 0, mode, lhs)
+        else
+            vim.keymap.del(mode, lhs, { buffer = buffer })
+        end
+    end)
+    
+    if success then
+        -- Remove from storage
+        for i, stored_keymap in ipairs(neoai_keymaps) do
+            if stored_keymap.mode == mode and stored_keymap.lhs == lhs and stored_keymap.buffer == buffer then
+                table.remove(neoai_keymaps, i)
+                break
+            end
+        end
+    end
+    
+    return success
 end
 
 -- Clear all NeoAI keymaps
 function M.clear()
-    for _, keymap in ipairs(default_keymaps) do
-        pcall(vim.keymap.del, keymap.mode, keymap.lhs)
+    local cleared = 0
+    
+    -- Clear in reverse order to avoid issues
+    for i = #neoai_keymaps, 1, -1 do
+        local keymap = neoai_keymaps[i]
+        if M.remove_keymap(keymap.mode, keymap.lhs, keymap.buffer) then
+            cleared = cleared + 1
+        end
+        table.remove(neoai_keymaps, i)
     end
     
-    for _, keymap in ipairs(user_keymaps) do
-        pcall(vim.keymap.del, keymap.mode, keymap.lhs)
+    if cleared > 0 then
+        vim.notify("NeoAI: Cleared " .. cleared .. " keymaps", vim.log.levels.DEBUG)
     end
 end
 
--- Add user keymap
-function M.add_user_keymap(keymap)
-    table.insert(user_keymaps, keymap)
+-- Check if a keymap exists
+function M.has_keymap(mode, lhs, buffer)
+    return has_keymap_conflict(mode, lhs, buffer)
 end
 
--- Get all keymaps
+-- Get all NeoAI keymaps
 function M.get_keymaps()
-    local all_keymaps = {}
-    vim.list_extend(all_keymaps, default_keymaps)
-    vim.list_extend(all_keymaps, user_keymaps)
-    return all_keymaps
+    return vim.deepcopy(neoai_keymaps)
 end
 
--- Check if keymap exists
-function M.has_keymap(mode, lhs)
-    local keymaps = vim.api.nvim_get_keymap(mode)
-    for _, keymap in ipairs(keymaps) do
-        if keymap.lhs == lhs then
-            return true
+-- Check for potential conflicts before setup
+function M.check_conflicts()
+    local conflicts = {}
+    
+    for _, keymap in ipairs(default_keymaps) do
+        local has_conflict, existing_keymap = has_keymap_conflict(keymap.mode, keymap.lhs)
+        if has_conflict then
+            local is_ours = existing_keymap.desc and existing_keymap.desc:match("NeoAI")
+            if not is_ours then
+                table.insert(conflicts, {
+                    mode = keymap.mode,
+                    lhs = keymap.lhs,
+                    existing = existing_keymap.desc or existing_keymap.rhs or "unknown",
+                })
+            end
         end
     end
-    return false
+    
+    return conflicts
+end
+
+-- Show keymap status
+function M.show_status()
+    local conflicts = M.check_conflicts()
+    local keymaps = M.get_keymaps()
+    
+    local status = string.format([[
+NeoAI Keymap Status:
+- Active keymaps: %d
+- Conflicts: %d
+]], #keymaps, #conflicts)
+    
+    if #conflicts > 0 then
+        status = status .. "\nConflicts:\n"
+        for _, conflict in ipairs(conflicts) do
+            status = status .. string.format("  %s %s -> %s\n", conflict.mode, conflict.lhs, conflict.existing)
+        end
+    end
+    
+    vim.notify(status, vim.log.levels.INFO)
 end
 
 return M

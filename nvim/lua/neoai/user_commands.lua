@@ -91,6 +91,34 @@ NeoAI Status:
     vim.notify(status_info, vim.log.levels.INFO)
 end
 
+-- Keymaps command
+commands["NeoaiKeymaps"] = function(opts)
+    local action = opts.args
+    local keymaps = require("neoai.keymaps")
+    
+    if action == "status" then
+        keymaps.show_status()
+    elseif action == "check" then
+        local conflicts = keymaps.check_conflicts()
+        if #conflicts == 0 then
+            vim.notify("NeoAI: No keymap conflicts detected", vim.log.levels.INFO)
+        else
+            local conflict_list = {}
+            for _, conflict in ipairs(conflicts) do
+                table.insert(conflict_list, string.format("  %s %s -> %s", conflict.mode, conflict.lhs, conflict.existing))
+            end
+            vim.notify("NeoAI: Keymap conflicts detected:\n" .. table.concat(conflict_list, "\n"), vim.log.levels.WARN)
+        end
+    elseif action == "clear" then
+        keymaps.clear()
+        vim.notify("NeoAI: All keymaps cleared", vim.log.levels.INFO)
+    elseif action == "setup" then
+        keymaps.setup()
+    else
+        vim.notify("NeoAI: Usage: NeoaiKeymaps <status|check|clear|setup>", vim.log.levels.ERROR)
+    end
+end
+
 -- Setup user commands
 function M.setup()
     for command_name, command_func in pairs(commands) do
