@@ -1,0 +1,13 @@
+[
+    { "keys": ["tab"], "command": "neo_ai_leader_key", "context": [ { "key": "neo_ai_leader_key_available", "operator": "equal", "operand": true }] },
+    { "keys": ["shift+tab"], "command": "neo_ai_reverse_leader_key", "context": [ { "key": "neo_ai_reverse_leader_key_available", "operator": "equal", "operand": true }] },
+    { "keys": ["1"], "command": "neo_ai", "args": {"num": 1 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 1 }] },
+    { "keys": ["2"], "command": "neo_ai", "args": {"num": 2 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 2 }] },
+    { "keys": ["3"], "command": "neo_ai", "args": {"num": 3 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 3 }] },
+    { "keys": ["4"], "command": "neo_ai", "args": {"num": 4 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 4 }] },
+    { "keys": ["5"], "command": "neo_ai", "args": {"num": 5 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 5 }] },
+    { "keys": ["6"], "command": "neo_ai", "args": {"num": 6 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 6 }] },
+    { "keys": ["7"], "command": "neo_ai", "args": {"num": 7 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 7 }] },
+    { "keys": ["8"], "command": "neo_ai", "args": {"num": 8 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 8 }] },
+    { "keys": ["9"], "command": "neo_ai", "args": {"num": 9 }, "context": [ { "key": "neo_ai_choice_available", "operator": "equal", "operand": 9 }] }
+]
