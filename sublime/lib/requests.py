@@ -1,4 +1,4 @@
-from .tab_nine_process import neoai_proc
+from .neo_ai_process import neoai_proc
 from .completion_origin import CompletionOrigin
 import os
 
