@@ -1,10 +1,13 @@
-import { AssistantModeManager } from './AssistantMode';
+import { Capability, isCapabilityEnabled } from "../capabilities/capabilities";
 
-export function getMode(): AssistantModeManager {
-  return AssistantModeManager.getInstance();
-}
-
-export function isModeEnabled(mode: string): boolean {
-  const modeManager = getMode();
-  return modeManager.isFeatureEnabled(mode);
+const MODE_A = "A";
+const MODE_B = "B";
+export default function getMode(): string {
+  if (isCapabilityEnabled(Capability.ASSISTANT_MODE_A_CAPABILITY_KEY)) {
+    return MODE_A;
+  }
+  if (isCapabilityEnabled(Capability.ASSISTANT_MODE_B_CAPABILITY_KEY)) {
+    return MODE_B;
+  }
+  return MODE_A; // default
 }

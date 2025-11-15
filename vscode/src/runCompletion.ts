@@ -1,226 +1,147 @@
-import * as vscode from 'vscode';
-import { CompletionArguments, CompletionResult } from './CompletionArguments';
-import { ProxyProvider } from './proxyProvider';
+import { CancellationToken, Position, Range, TextDocument } from "vscode";
+import {
+  autocomplete,
+  AutocompleteParams,
+  AutocompleteResult,
+} from "./binary/requests/requests";
+import getTabSize from "./binary/requests/tabSize";
+import { Capability, isCapabilityEnabled } from "./capabilities/capabilities";
+import {
+  CHAR_LIMIT,
+  INLINE_REQUEST_TIMEOUT,
+  MAX_NUM_RESULTS,
+} from "./globals/consts";
+import languages from "./globals/languages";
+import { getSDKPath } from "./languages";
 
-export async function runCompletion(
-	args: CompletionArguments,
-	token: vscode.CancellationToken
-): Promise<CompletionResult> {
-	try {
-		// Check for cancellation
-		if (token.isCancellationRequested) {
-			return { completions: [] };
-		}
+export default async function runCompletion({
+  document,
+  position,
+  timeout = undefined,
+  currentSuggestionText = "",
+  retry,
+}: {
+  document: TextDocument;
+  position: Position;
+  timeout?: number | undefined;
+  currentSuggestionText?: string;
+  retry?: {
+    cancellationToken?: CancellationToken;
+    interval?: number;
+    timeout?: number;
+  };
+}): Promise<AutocompleteResult | null | undefined> {
+  const offset = document.offsetAt(position);
+  const beforeStartOffset = Math.max(0, offset - CHAR_LIMIT);
+  const afterEndOffset = offset + CHAR_LIMIT;
+  const beforeStart = document.positionAt(beforeStartOffset);
+  const afterEnd = document.positionAt(afterEndOffset);
+  const requestData = {
+    filename: getFileNameWithExtension(document),
+    before:
+      document.getText(new Range(beforeStart, position)) +
+      currentSuggestionText,
+    after: document.getText(new Range(position, afterEnd)),
+    region_includes_beginning: beforeStartOffset === 0,
+    region_includes_end: document.offsetAt(afterEnd) !== afterEndOffset,
+    max_num_results: getMaxResults(),
+    offset,
+    line: position.line,
+    character: position.character,
+    indentation_size: getTabSize(),
+    sdk_path: getSDKPath(document.languageId),
+  };
 
-		// Get configuration
-		const config = vscode.workspace.getConfiguration('neoai');
-		const cloudHost = config.get<string>('cloudHost');
-		const ignoreCertificateErrors = config.get<boolean>('ignoreCertificateErrors', false);
+  const isEmptyLine = document.lineAt(position.line).text.trim().length === 0;
 
-		// Prepare the prompt
-		const prompt = preparePrompt(args);
+  const result = await autocomplete(
+    requestData,
+    isEmptyLine ? INLINE_REQUEST_TIMEOUT : timeout
+  );
 
-		// Make API request
-		const response = await makeApiRequest(prompt, args, cloudHost, ignoreCertificateErrors);
+  if (result?.results.length || !retry?.cancellationToken) {
+    return result;
+  }
 
-		// Parse response
-		return parseResponse(response);
-
-	} catch (error) {
-		console.error('Error in runCompletion:', error);
-		return { completions: [] };
-	}
+  return handleRetries(requestData, retry);
 }
 
-function preparePrompt(args: CompletionArguments): string {
-	const { document, position } = args;
-	
-	// Get context around the cursor
-	const textBeforeCursor = document.getText(new vscode.Range(
-		new vscode.Position(0, 0),
-		position
-	));
-	
-	const textAfterCursor = document.getText(new vscode.Range(
-		position,
-		new vscode.Position(document.lineCount, 0)
-	));
+function handleRetries(
+  requestData: AutocompleteParams,
+  {
+    cancellationToken,
+    interval = 200,
+    timeout = 1000,
+  }: {
+    cancellationToken?: CancellationToken;
+    interval?: number;
+    timeout?: number;
+  }
+): Promise<AutocompleteResult | null | undefined> | null | undefined {
+  if (cancellationToken?.isCancellationRequested) {
+    return null;
+  }
+  return new Promise((resolve, reject) => {
+    let timeoutId: NodeJS.Timeout | undefined;
+    let lastResult: AutocompleteResult | undefined;
+    const intervalId = setInterval(() => {
+      void autocomplete({ ...requestData, cached_only: true })
+        .then((result) => {
+          if (result?.results.length) {
+            clearInterval(intervalId);
+            clearTimeout(timeoutId as NodeJS.Timeout);
+            lastResult = result;
+            resolve(result);
+          }
+        })
+        .catch((error) => {
+          clearInterval(intervalId);
+          clearTimeout(timeoutId as NodeJS.Timeout);
+          reject(error);
+        });
+    }, interval);
 
-	// Get a reasonable amount of context (e.g., 2000 characters before and after)
-	const contextBefore = textBeforeCursor.slice(-2000);
-	const contextAfter = textAfterCursor.slice(0, 1000);
+    timeoutId = setTimeout(() => {
+      clearInterval(intervalId);
+      resolve(lastResult);
+    }, timeout);
 
-	// Build the prompt
-	const prompt = `
-Language: ${document.languageId}
-File: ${document.uri.fsPath}
-
-Context before cursor:
-${contextBefore}
-
-Context after cursor:
-${contextAfter}
-
-Provide code completion for the cursor position:
-`;
-
-	return prompt;
+    cancellationToken?.onCancellationRequested(() => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId as NodeJS.Timeout);
+      resolve(null);
+    });
+  });
 }
 
-async function makeApiRequest(
-	prompt: string,
-	args: CompletionArguments,
-	cloudHost?: string,
-	ignoreCertificateErrors?: boolean
-): Promise<any> {
-	const config = vscode.workspace.getConfiguration('neoai');
-	
-	// For now, return a mock response since we don't have the actual API
-	// In a real implementation, this would make an HTTP request to the NeoAI API
-	console.log('Making API request to NeoAI service...');
-	console.log('Prompt:', prompt);
-	console.log('Args:', args);
-	
-	// Simulate API delay
-	await new Promise(resolve => setTimeout(resolve, 100));
-	
-	// Mock response
-	return {
-		choices: [
-			{
-				text: generateMockCompletion(args),
-				finish_reason: 'stop',
-				index: 0
-			}
-		],
-		usage: {
-			prompt_tokens: 100,
-			completion_tokens: 50,
-			total_tokens: 150
-		},
-		model: 'neoai-code-completion',
-		created: Date.now(),
-		id: 'mock-completion-id'
-	};
+function getMaxResults(): number {
+  if (isCapabilityEnabled(Capability.SUGGESTIONS_SINGLE)) {
+    return 1;
+  }
+
+  if (isCapabilityEnabled(Capability.SUGGESTIONS_TWO)) {
+    return 2;
+  }
+
+  return MAX_NUM_RESULTS;
 }
 
-function generateMockCompletion(args: CompletionArguments): string {
-	const { document, position } = args;
-	const languageId = document.languageId;
-	
-	// Generate context-aware mock completions based on language
-	switch (languageId) {
-		case 'typescript':
-		case 'javascript':
-			return generateJavaScriptCompletion(document, position);
-		case 'python':
-			return generatePythonCompletion(document, position);
-		case 'java':
-			return generateJavaCompletion(document, position);
-		case 'json':
-			return generateJsonCompletion(document, position);
-		default:
-			return generateGenericCompletion(document, position);
-	}
+type KnownLanguageType = keyof typeof languages;
+
+export function getLanguageFileExtension(
+  languageId: string
+): string | undefined {
+  return languages[languageId as KnownLanguageType];
 }
 
-function generateJavaScriptCompletion(document: vscode.TextDocument, position: vscode.Position): string {
-	const line = document.lineAt(position.line).text;
-	const textBefore = line.substring(0, position.character);
-	
-	// Simple heuristics for JavaScript/TypeScript
-	if (textBefore.endsWith('function ')) {
-		return 'methodName() {\n  // TODO: implement\n}';
-	}
-	if (textBefore.endsWith('const ')) {
-		return 'variableName = initialValue;';
-	}
-	if (textBefore.endsWith('if (')) {
-		return 'condition) {\n  // TODO: handle condition\n}';
-	}
-	if (textBefore.endsWith('class ')) {
-		return 'ClassName {\n  constructor() {\n    // TODO: initialize\n  }\n}';
-	}
-	
-	return '// TODO: add implementation';
-}
-
-function generatePythonCompletion(document: vscode.TextDocument, position: vscode.Position): string {
-	const line = document.lineAt(position.line).text;
-	const textBefore = line.substring(0, position.character);
-	
-	// Simple heuristics for Python
-	if (textBefore.endsWith('def ')) {
-		return 'method_name(self):\n    """TODO: Add docstring"""\n    pass';
-	}
-	if (textBefore.endsWith('class ')) {
-		return 'ClassName:\n    """TODO: Add docstring"""\n    def __init__(self):\n        pass';
-	}
-	if (textBefore.endsWith('if ')) {
-		return 'condition:\n    # TODO: handle condition\n    pass';
-	}
-	
-	return '# TODO: add implementation';
-}
-
-function generateJavaCompletion(document: vscode.TextDocument, position: vscode.Position): string {
-	const line = document.lineAt(position.line).text;
-	const textBefore = line.substring(0, position.character);
-	
-	// Simple heuristics for Java
-	if (textBefore.endsWith('public void ')) {
-		return 'methodName() {\n  // TODO: implement\n}';
-	}
-	if (textBefore.endsWith('public class ')) {
-		return 'ClassName {\n  // TODO: add fields and methods\n}';
-	}
-	if (textBefore.endsWith('if (')) {
-		return 'condition) {\n  // TODO: handle condition\n}';
-	}
-	
-	return '// TODO: add implementation';
-}
-
-function generateJsonCompletion(document: vscode.TextDocument, position: vscode.Position): string {
-	const line = document.lineAt(position.line).text;
-	const textBefore = line.substring(0, position.character);
-	
-	// Simple heuristics for JSON
-	if (textBefore.endsWith('{')) {
-		return '\n  "key": "value"\n}';
-	}
-	if (textBefore.endsWith('[')) {
-		return '\n  {\n    "item": "value"\n  }\n]';
-	}
-	
-	return '"key": "value"';
-}
-
-function generateGenericCompletion(document: vscode.TextDocument, position: vscode.Position): string {
-	return '// TODO: add implementation';
-}
-
-function parseResponse(response: any): CompletionResult {
-	if (!response || !response.choices || response.choices.length === 0) {
-		return { completions: [] };
-	}
-
-	const choice = response.choices[0];
-	const completionText = choice.text || '';
-
-	return {
-		completions: [
-			{
-				text: completionText,
-				insertText: completionText,
-				kind: 'text',
-				score: 1.0
-			}
-		],
-		model: response.model,
-		usage: response.usage,
-		finishReason: choice.finish_reason,
-		created: response.created,
-		id: response.id
-	};
+function getFileNameWithExtension(document: TextDocument): string {
+  const { languageId, fileName } = document;
+  if (!document.isUntitled) {
+    return fileName;
+  }
+  const extension = getLanguageFileExtension(languageId);
+  if (extension) {
+    return fileName.concat(extension);
+  }
+  return fileName;
 }

@@ -1,16 +1,14 @@
-import * as vscode from 'vscode';
+import { Disposable } from "vscode";
+import { installationState } from "./events/installationStateChangedEmitter";
+import { openGettingStartedWebview } from "./webview/openGettingStartedWebview";
+import { isAlreadyOpenedGettingStarted } from "./state/gettingStartedOpenedState";
+import { ExtensionContext } from "./preRelease/types";
 
-export function handlePluginInstalled(): void {
-  vscode.window.showInformationMessage('NeoAI plugin installed successfully!');
-  
-  // Show welcome message
-  vscode.window.showInformationMessage(
-    'Welcome to NeoAI! Get started by selecting some code and using the NeoAI commands.',
-    'View Commands',
-    'Dismiss'
-  ).then((choice: string | undefined) => {
-    if (choice === 'View Commands') {
-      vscode.commands.executeCommand('workbench.action.showCommands');
-    }
+export default function handlePluginInstalled(
+  context: ExtensionContext
+): Disposable {
+  return installationState.event(() => {
+    if (isAlreadyOpenedGettingStarted(context)) return;
+    openGettingStartedWebview(context);
   });
 }

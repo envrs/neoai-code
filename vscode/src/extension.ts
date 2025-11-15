@@ -1,63 +1,223 @@
-// Import VSCode types - these will be available at runtime in VSCode extension host
-import * as vscode from 'vscode';
-import { CommandsHandler } from './commandsHandler';
-import { InlineCompletionProvider } from './provideInlineCompletionItems';
-import { CompletionItemProvider } from './provideCompletionItems';
-import { ActiveTextEditorState } from './activeTextEditorState';
-import { ProxyProvider } from './proxyProvider';
+import * as vscode from "vscode";
+import handlePreReleaseChannels from "./preRelease/installer";
+import pollDownloadProgress from "./binary/pollDownloadProgress";
+import {
+  deactivate as requestDeactivate,
+  initBinary,
+  uninstalling,
+} from "./binary/requests/requests";
+import {
+  Capability,
+  fetchCapabilitiesOnFocus,
+  isCapabilityEnabled,
+} from "./capabilities/capabilities";
+import { registerCommands } from "./commandsHandler";
+import { BRAND_NAME } from "./globals/consts";
+import neoaiExtensionProperties from "./globals/neoaiExtensionProperties";
+import handleUninstall from "./handleUninstall";
+import { provideHover } from "./hovers/hoverHandler";
+import pollNotifications, {
+  cancelNotificationsPolling,
+} from "./notifications/pollNotifications";
+import {
+  COMPLETION_IMPORTS,
+  handleImports,
+  HANDLE_IMPORTS,
+  SELECTION_COMPLETED,
+  selectionHandler,
+} from "./selectionHandler";
+import pollStatuses from "./statusBar/pollStatusBar";
+import { registerStatusBar, setDefaultStatus } from "./statusBar/statusBar";
+import { initReporter, report } from "./reports/reporter";
+import { setBinaryRootPath } from "./binary/paths";
+import { setNeoaiExtensionContext } from "./globals/neoaiExtensionContext";
+import { updatePersistedAlphaVersion } from "./preRelease/versions";
+import isCloudEnv from "./cloudEnvs/isCloudEnv";
+import setupCloudState from "./cloudEnvs/setupCloudState";
+import { closeAssistant } from "./assistant/requests/request";
+import initAssistant from "./assistant/AssistantClient";
+import NeoaiAuthenticationProvider from "./authentication/NeoaiAuthenticationProvider";
+import isAuthenticationApiSupported from "./globals/versions";
+import registerNotificationsWebview from "./notificationsWidget/notificationsWidgetWebview";
+import notifyWorkspaceChanged from "./binary/requests/notifyWorkspaceChanged";
+import registerNeoaiTodayWidgetWebview from "./neoaiTodayWidget/neoaiTodayWidgetWebview";
+import registerCodeReview from "./codeReview/codeReview";
+import installAutocomplete from "./autocompleteInstaller";
+import handlePluginInstalled from "./handlePluginInstalled";
+import { pollUserUpdates } from "./pollUserUpdates";
+import EventName from "./reports/EventName";
+import registerNeoaiChatWidgetWebview from "./neoaiChatWidget/neoaiChatWidgetWebview";
+import { forceRegistrationIfNeeded } from "./registration/forceRegistration";
+import { installationState } from "./events/installationStateChangedEmitter";
+import { Logger } from "./utils/logger";
+import { callForLogin } from "./authentication/authentication.api";
+import { emptyStateWelcomeView } from "./neoaiChatWidget/webviews/emptyStateChatWelcomeView";
+import { emptyStateAuthenticateView } from "./neoaiChatWidget/webviews/emptyStateAuthenticateView";
+import { activeTextEditorState } from "./activeTextEditorState";
+import { WorkspaceUpdater } from "./WorkspaceUpdater";
+import SaasChatEnabledState from "./neoaiChatWidget/SaasChatEnabledState";
+import BINARY_STATE from "./binary/binaryStateSingleton";
+import EvalSaasChatEnabledState from "./neoaiChatWidget/EvalSaasChatEnabledState";
+import { ChatAPI } from "./neoaiChatWidget/ChatApi";
+import ChatViewProvider from "./neoaiChatWidget/ChatViewProvider";
+import { previewEndedView } from "./neoaiChatWidget/webviews/previewEndedView";
 
-let extensionContext: vscode.ExtensionContext;
+export async function activate(
+  context: vscode.ExtensionContext
+): Promise<void> {
+  Logger.init(context);
+  if (isCloudEnv) await setupCloudState(context);
 
-export function activate(context: vscode.ExtensionContext) {
-	extensionContext = context;
-	
-	console.log('NeoAI extension is now active!');
+  void initStartup(context);
+  context.subscriptions.push(handleSelection(context));
+  context.subscriptions.push(handleUninstall(() => uponUninstall(context)));
+  context.subscriptions.push(installationState);
+  context.subscriptions.push(BINARY_STATE);
+  context.subscriptions.push(activeTextEditorState);
+  context.subscriptions.push(new WorkspaceUpdater());
+  registerCodeReview();
 
-	// Initialize commands handler
-	const commandsHandler = new CommandsHandler(context);
-	commandsHandler.registerCommands();
+  context.subscriptions.push(registerStatusBar(context));
 
-	// Initialize providers
-	const inlineCompletionProvider = new InlineCompletionProvider();
-	const completionProvider = new CompletionItemProvider();
-	const activeTextEditorState = new ActiveTextEditorState();
-	const proxyProvider = new ProxyProvider();
+  // Do not await on this function as we do not want VSCode to wait for it to finish
+  // before considering NeoAi ready to operate.
+  void backgroundInit(context);
 
-	// Register inline completion provider
-	context.subscriptions.push(
-		vscode.languages.registerInlineCompletionItemProvider(
-			[{ pattern: '**' }], // All files
-			inlineCompletionProvider
-		)
-	);
+  if (context.extensionMode !== vscode.ExtensionMode.Test) {
+    handlePluginInstalled(context);
+  }
+  forceRegistrationIfNeeded();
 
-	// Register completion provider
-	context.subscriptions.push(
-		vscode.languages.registerCompletionItemProvider(
-			[{ pattern: '**' }], // All files
-			completionProvider,
-			'.', // Trigger on dot
-			'(', // Trigger on opening parenthesis
-			'<'  // Trigger on less than sign
-		)
-	);
-
-	// Store instances for global access
-	context.subscriptions.push({
-		dispose: () => {
-			inlineCompletionProvider.dispose();
-			activeTextEditorState.dispose();
-			proxyProvider.dispose();
-		}
-	});
-
-	console.log('NeoAI extension activated successfully');
+  return Promise.resolve();
 }
 
-export function deactivate() {
-	console.log('NeoAI extension deactivated');
+function initStartup(context: vscode.ExtensionContext): void {
+  setNeoaiExtensionContext(context);
+  initReporter();
+  report(EventName.EXTENSION_ACTIVATED);
+
+  if (neoaiExtensionProperties.isInstalled) {
+    report(EventName.EXTENSION_INSTALLED);
+  }
 }
 
-export function getExtensionContext(): vscode.ExtensionContext {
-	return extensionContext;
+async function backgroundInit(context: vscode.ExtensionContext) {
+  await setBinaryRootPath(context);
+  await initBinary(["--client=vscode"]);
+  // Goes to the binary to fetch what capabilities enabled:
+  await fetchCapabilitiesOnFocus();
+
+  notifyBinaryAboutWorkspaceChange();
+  vscode.workspace.onDidChangeWorkspaceFolders(
+    notifyBinaryAboutWorkspaceChange
+  );
+
+  if (
+    isCapabilityEnabled(Capability.AUTHENTICATION) &&
+    isAuthenticationApiSupported()
+  ) {
+    context.subscriptions.push(
+      vscode.authentication.registerAuthenticationProvider(
+        BRAND_NAME,
+        BRAND_NAME,
+        new NeoaiAuthenticationProvider()
+      )
+    );
+  }
+  vscode.commands.registerCommand("neoai.authenticate", () => {
+    void callForLogin();
+  });
+  context.subscriptions.push(
+    previewEndedView(context),
+    emptyStateWelcomeView(context),
+    emptyStateAuthenticateView(context)
+  );
+
+  if (context.extensionMode !== vscode.ExtensionMode.Test) {
+    void handlePreReleaseChannels(context);
+  }
+  if (
+    isCapabilityEnabled(Capability.ALPHA_CAPABILITY) ||
+    isCapabilityEnabled(Capability.ASSISTANT_CAPABILITY)
+  ) {
+    void initAssistant(context, {
+      dispose: () => {},
+    });
+  }
+
+  const chatEnabledState =
+    process.env.IS_EVAL_MODE &&
+    context.extensionMode === vscode.ExtensionMode.Test
+      ? new EvalSaasChatEnabledState(context)
+      : new SaasChatEnabledState(context);
+
+  context.subscriptions.push(chatEnabledState);
+
+  registerNeoaiChatWidgetWebview(
+    context,
+    chatEnabledState,
+    new ChatViewProvider(
+      context,
+      new ChatAPI(context, {
+        serverUrl:
+          context.extensionMode === vscode.ExtensionMode.Test
+            ? process.env.CHAT_SERVER_URL
+            : undefined,
+        isSelfHosted: false,
+        isTelemetryEnabled: isCapabilityEnabled(Capability.ALPHA_CAPABILITY),
+      })
+    )
+  );
+  pollNotifications(context);
+  pollStatuses(context);
+  setDefaultStatus();
+  void registerCommands(context);
+  pollDownloadProgress();
+  registerNotificationsWebview(context);
+  registerNeoaiTodayWidgetWebview(context);
+
+  await installAutocomplete(context);
+
+  vscode.languages.registerHoverProvider(
+    { pattern: "**" },
+    {
+      provideHover,
+    }
+  );
+}
+
+export async function deactivate(): Promise<unknown> {
+  void closeAssistant();
+  cancelNotificationsPolling();
+  return requestDeactivate();
+}
+
+function uponUninstall(context: vscode.ExtensionContext): Promise<unknown> {
+  void updatePersistedAlphaVersion(context, undefined);
+  report(EventName.EXTENSION_UNINSTALLED);
+  return uninstalling();
+}
+
+export function handleSelection(
+  context: vscode.ExtensionContext
+): vscode.Disposable {
+  return vscode.Disposable.from(
+    vscode.commands.registerTextEditorCommand(
+      COMPLETION_IMPORTS,
+      selectionHandler
+    ),
+    vscode.commands.registerTextEditorCommand(
+      SELECTION_COMPLETED,
+      (editor: vscode.TextEditor) => pollUserUpdates(context, editor)
+    ),
+    vscode.commands.registerTextEditorCommand(HANDLE_IMPORTS, handleImports)
+  );
+}
+
+function notifyBinaryAboutWorkspaceChange() {
+  const workspaceFolders = vscode.workspace.workspaceFolders
+    ? vscode.workspace.workspaceFolders.map((folder) => folder.uri.path)
+    : [];
+
+  void notifyWorkspaceChanged(workspaceFolders);
 }

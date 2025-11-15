@@ -1,152 +1,227 @@
-import * as vscode from 'vscode';
-import { getInlineCompletionItems } from './getInlineCompletionItems';
+import * as vscode from "vscode";
+import {
+  AutocompleteResult,
+  MarkdownStringSpec,
+  ResultEntry,
+} from "./binary/requests/requests";
+import {
+  ATTRIBUTION_BRAND,
+  BRAND_NAME,
+  DEFAULT_DETAIL,
+  LIMITATION_SYMBOL,
+} from "./globals/consts";
+import neoaiExtensionProperties from "./globals/neoaiExtensionProperties";
+import runCompletion from "./runCompletion";
+import { COMPLETION_IMPORTS } from "./selectionHandler";
+import { setCompletionStatus } from "./statusBar/statusBar";
+import { escapeTabStopSign } from "./utils/utils";
+import { Logger } from "./utils/logger";
 
-export class CompletionItemProvider implements vscode.CompletionItemProvider {
-	async provideCompletionItems(
-		document: vscode.TextDocument,
-		position: vscode.Position,
-		token: vscode.CancellationToken,
-		context: vscode.CompletionContext
-	): Promise<vscode.CompletionItem[]> {
-		if (this.shouldDisableCompletion(document, position)) {
-			return [];
-		}
+const INCOMPLETE = true;
 
-		try {
-			const completions = await getInlineCompletionItems(document, position, context, token);
-			return completions.map(completion => this.createCompletionItem(completion));
-		} catch (error) {
-			console.error('Error providing completion items:', error);
-			return [];
-		}
-	}
+export default async function provideCompletionItems(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): Promise<vscode.CompletionList> {
+  return new vscode.CompletionList(
+    await completionsListFor(document, position),
+    INCOMPLETE
+  );
+}
 
-	private createCompletionItem(completion: any): vscode.CompletionItem {
-		if (typeof completion === 'string') {
-			const item = new vscode.CompletionItem(completion, vscode.CompletionItemKind.Text);
-			item.insertText = completion;
-			return item;
-		}
+async function completionsListFor(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): Promise<vscode.CompletionItem[]> {
+  try {
+    if (!completionIsAllowed(document, position)) {
+      return [];
+    }
 
-		const item = new vscode.CompletionItem(
-			completion.label || completion.text || '',
-			this.getCompletionKind(completion.kind)
-		);
+    const response = await runCompletion({ document, position });
 
-		item.insertText = completion.insertText || completion.text || '';
-		item.detail = completion.detail || '';
-		item.documentation = completion.documentation 
-			? new vscode.MarkdownString(completion.documentation)
-			: undefined;
-		
-		if (completion.range) {
-			item.range = new vscode.Range(
-				completion.range.start.line,
-				completion.range.start.character,
-				completion.range.end.line,
-				completion.range.end.character
-			);
-		}
+    setCompletionStatus(response?.is_locked);
 
-		if (completion.additionalTextEdits) {
-			item.additionalTextEdits = completion.additionalTextEdits.map((edit: any) => 
-				new vscode.TextEdit(
-					new vscode.Range(
-						edit.range.start.line,
-						edit.range.start.character,
-						edit.range.end.line,
-						edit.range.end.character
-					),
-					edit.newText
-				)
-			);
-		}
+    if (!response || response?.results.length === 0) {
+      return [];
+    }
 
-		return item;
-	}
+    const limit =
+      showFew(response, document, position) || response.is_locked
+        ? 1
+        : response.results.length;
 
-	private getCompletionKind(kind?: string): vscode.CompletionItemKind {
-		switch (kind) {
-			case 'method':
-				return vscode.CompletionItemKind.Method;
-			case 'function':
-				return vscode.CompletionItemKind.Function;
-			case 'variable':
-				return vscode.CompletionItemKind.Variable;
-			case 'class':
-				return vscode.CompletionItemKind.Class;
-			case 'interface':
-				return vscode.CompletionItemKind.Interface;
-			case 'property':
-				return vscode.CompletionItemKind.Property;
-			case 'field':
-				return vscode.CompletionItemKind.Field;
-			case 'constructor':
-				return vscode.CompletionItemKind.Constructor;
-			case 'keyword':
-				return vscode.CompletionItemKind.Keyword;
-			case 'snippet':
-				return vscode.CompletionItemKind.Snippet;
-			case 'file':
-				return vscode.CompletionItemKind.File;
-			case 'directory':
-				return vscode.CompletionItemKind.Folder;
-			case 'module':
-				return vscode.CompletionItemKind.Module;
-			case 'enum':
-				return vscode.CompletionItemKind.Enum;
-			case 'enumMember':
-				return vscode.CompletionItemKind.EnumMember;
-			case 'color':
-				return vscode.CompletionItemKind.Color;
-			case 'reference':
-				return vscode.CompletionItemKind.Reference;
-			case 'unit':
-				return vscode.CompletionItemKind.Unit;
-			case 'value':
-				return vscode.CompletionItemKind.Value;
-			case 'event':
-				return vscode.CompletionItemKind.Event;
-			case 'operator':
-				return vscode.CompletionItemKind.Operator;
-			case 'typeParameter':
-				return vscode.CompletionItemKind.TypeParameter;
-			default:
-				return vscode.CompletionItemKind.Text;
-		}
-	}
+    return response.results.slice(0, limit).map((entry, index) =>
+      makeCompletionItem({
+        document,
+        index,
+        position,
+        detailMessage: extractDetailMessage(response),
+        oldPrefix: response?.old_prefix,
+        entry,
+        results: response?.results,
+        limited: response?.is_locked,
+      })
+    );
+  } catch (e) {
+    Logger.error(`Error setting up request: ${e}`);
 
-	private shouldDisableCompletion(document: vscode.TextDocument, position: vscode.Position): boolean {
-		const config = vscode.workspace.getConfiguration('neoai');
-		
-		// Check file regex patterns
-		const disableFileRegex = config.get<string[]>('disableFileRegex', []);
-		const filePath = document.uri.fsPath;
-		for (const pattern of disableFileRegex) {
-			try {
-				const regex = new RegExp(pattern);
-				if (regex.test(filePath)) {
-					return true;
-				}
-			} catch (error) {
-				console.warn(`Invalid regex pattern in disableFileRegex: ${pattern}`);
-			}
-		}
+    return [];
+  }
+}
 
-		// Check line regex patterns
-		const disableLineRegex = config.get<string[]>('disableLineRegex', []);
-		const lineText = document.lineAt(position.line).text;
-		for (const pattern of disableLineRegex) {
-			try {
-				const regex = new RegExp(pattern);
-				if (regex.test(lineText)) {
-					return true;
-				}
-			} catch (error) {
-				console.warn(`Invalid regex pattern in disableLineRegex: ${pattern}`);
-			}
-		}
+function extractDetailMessage(response: AutocompleteResult) {
+  return (response.user_message || []).join("\n") || DEFAULT_DETAIL;
+}
 
-		return false;
-	}
+function makeCompletionItem(args: {
+  document: vscode.TextDocument;
+  index: number;
+  position: vscode.Position;
+  detailMessage: string;
+  oldPrefix: string;
+  entry: ResultEntry;
+  results: ResultEntry[];
+  limited: boolean;
+}): vscode.CompletionItem {
+  const item = new vscode.CompletionItem(
+    ATTRIBUTION_BRAND + args.entry.new_prefix
+  );
+  if (args.limited) {
+    item.detail = `${LIMITATION_SYMBOL} ${BRAND_NAME}`;
+  } else {
+    item.detail = BRAND_NAME;
+  }
+
+  item.sortText = String.fromCharCode(0) + String.fromCharCode(args.index);
+  item.insertText = new vscode.SnippetString(
+    escapeTabStopSign(args.entry.new_prefix)
+  );
+
+  item.filterText = args.entry.new_prefix;
+  item.preselect = args.index === 0;
+  item.kind = args.entry.completion_metadata?.kind;
+  item.range = new vscode.Range(
+    args.position.translate(0, -args.oldPrefix.length),
+    args.position.translate(0, args.entry.old_suffix.length)
+  );
+
+  if (neoaiExtensionProperties.isNeoAiAutoImportEnabled) {
+    item.command = {
+      arguments: [
+        {
+          currentCompletion: args.entry.new_prefix,
+          completions: args.results,
+          position: args.position,
+          limited: args.limited,
+          oldPrefix: args.oldPrefix,
+        },
+      ],
+      command: COMPLETION_IMPORTS,
+      title: "accept completion",
+    };
+  }
+
+  if (args.entry.new_suffix) {
+    item.insertText
+      .appendTabstop(0)
+      .appendText(escapeTabStopSign(args.entry.new_suffix));
+  }
+
+  if (args.entry.completion_metadata?.documentation) {
+    item.documentation = formatDocumentation(
+      args.entry.completion_metadata?.documentation
+    );
+  }
+
+  return item;
+}
+
+function formatDocumentation(
+  documentation: string | MarkdownStringSpec
+): string | vscode.MarkdownString {
+  if (isMarkdownStringSpec(documentation)) {
+    if (documentation.kind === "markdown") {
+      return new vscode.MarkdownString(documentation.value);
+    }
+    return documentation.value;
+  }
+  return documentation;
+}
+
+function isMarkdownStringSpec(
+  x: string | MarkdownStringSpec
+): x is MarkdownStringSpec {
+  return !(typeof x === "string");
+}
+
+export function completionIsAllowed(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): boolean {
+  const configuration = vscode.workspace.getConfiguration();
+  const disableLineRegex = getMisnamedConfigPropertyValue(
+    "neoai.disableLineRegex",
+    "neoai.disable_line_regex",
+    configuration
+  );
+
+  const line = document.getText(
+    new vscode.Range(
+      position.with({ character: 0 }),
+      position.with({ character: 500 })
+    )
+  );
+
+  if (disableLineRegex.some((r) => new RegExp(r).test(line))) {
+    return false;
+  }
+
+  const disableFileRegex = getMisnamedConfigPropertyValue(
+    "neoai.disableFileRegex",
+    "neoai.disable_file_regex",
+    configuration
+  );
+
+  return !disableFileRegex.some((r) => new RegExp(r).test(document.fileName));
+}
+
+function getMisnamedConfigPropertyValue(
+  properPropName: string,
+  propMisname: string,
+  configuration: vscode.WorkspaceConfiguration
+): string[] {
+  let disableLineRegex = configuration.get<string[]>(properPropName);
+  if (!disableLineRegex || !disableLineRegex.length) {
+    disableLineRegex = configuration.get<string[]>(propMisname);
+  }
+
+  if (disableLineRegex === undefined) {
+    disableLineRegex = [];
+  }
+
+  return disableLineRegex;
+}
+
+function showFew(
+  response: AutocompleteResult,
+  document: vscode.TextDocument,
+  position: vscode.Position
+): boolean {
+  if (
+    response.results.some(
+      (entry) =>
+        entry.completion_metadata?.kind ||
+        entry.completion_metadata?.documentation
+    )
+  ) {
+    return false;
+  }
+
+  const leftPoint = position.translate(0, -response.old_prefix.length);
+  const tail = document.getText(
+    new vscode.Range(document.lineAt(leftPoint).range.start, leftPoint)
+  );
+
+  return tail.endsWith(".") || tail.endsWith("::");
 }

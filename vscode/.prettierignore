@@ -1,11 +1,10 @@
-# don't ever lint node_modules
-node_modules
-# don't lint build output (make sure it's set to your correct build folder name)
-dist
-out
-# don't lint nyc coverage output
+# Ignore artifacts:
+build
 coverage
-.eslintrc.js
-src/onPrem.ts
-verify-package-metadata.js
-chat
+out
+assets
+binaries
+node_modules
+.vscode
+.github
+.vscode-test

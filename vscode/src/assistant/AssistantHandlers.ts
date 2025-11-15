@@ -1,107 +1,136 @@
-import * as vscode from 'vscode';
-import { AssistantClient } from './AssistantClient';
+import * as vscode from "vscode";
+import setState, {
+  AssistantSelectionStateRequest,
+} from "../binary/requests/setState";
+import CompletionOrigin from "../CompletionOrigin";
+import { StatePayload } from "../globals/consts";
+import { StateType } from "./utils";
+import clearCache from "./requests/clearCache";
+import { Completion } from "./Completion";
+import setIgnore from "./requests/setIgnore";
+import { getAssistantVersion } from "./requests/request";
+import { ASSISTANT_IGNORE_REFRESH_COMMAND } from "./globals";
+import { IgnoreAssistantSelection } from "./IgnoreAssistantSelection";
+import { AcceptAssistantSelection } from "./AcceptAssistantSelection";
+import { setDecorators } from "./diagnostics";
+import { Logger } from "../utils/logger";
 
-export class AssistantHandlers {
-  private client: AssistantClient;
-  
-  constructor(client: AssistantClient) {
-    this.client = client;
+const IGNORE_VALUE = "__IGNORE__";
+
+export async function assistantClearCacheHandler(): Promise<void> {
+  await clearCache();
+  void setState({
+    [StatePayload.STATE]: { state_type: StateType.clearCache },
+  });
+}
+
+export async function assistantSelectionHandler(
+  editor: vscode.TextEditor,
+  edit: vscode.TextEditorEdit,
+  {
+    currentSuggestion,
+    allSuggestions,
+    reference,
+    threshold,
+  }: AcceptAssistantSelection
+): Promise<void> {
+  try {
+    setDecorators([]);
+    await vscode.commands.executeCommand(ASSISTANT_IGNORE_REFRESH_COMMAND);
+    const assistantVersion = await getAssistantVersion();
+    const eventData = eventDataOf(
+      editor,
+      currentSuggestion,
+      allSuggestions,
+      reference,
+      threshold,
+      false,
+      assistantVersion
+    );
+    void setState(eventData);
+  } catch (error) {
+    Logger.error(error);
   }
-  
-  public registerCompletionHandler(): vscode.Disposable {
-    return vscode.commands.registerCommand('neoai.assistant.complete', async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        vscode.window.showErrorMessage('No active editor');
-        return;
-      }
-      
-      try {
-        const selection = editor.selection;
-        const text = editor.document.getText(selection);
-        
-        if (!text) {
-          vscode.window.showInformationMessage('Please select some text to complete');
-          return;
-        }
-        
-        // Show progress indicator
-        await vscode.window.withProgress({
-          location: vscode.ProgressLocation.Notification,
-          title: 'NeoAI Assistant',
-          cancellable: true
-        }, async (progress, token) => {
-          progress.report({ increment: 0, message: 'Generating completion...' });
-          
-          // Request completion from assistant
-          const response = await this.client.requestCompletion({
-            prompt: text,
-            mode: {} as any, // Will be properly implemented
-            cancellationToken: token as any
-          });
-          
-          progress.report({ increment: 100, message: 'Complete!' });
-          
-          // Insert completion
-          if (response.suggestions.length > 0) {
-            await editor.edit(editBuilder => {
-              editBuilder.insert(selection.end, response.suggestions[0]);
-            });
-          }
-        });
-      } catch (error) {
-        vscode.window.showErrorMessage(`Assistant error: ${error}`);
-      }
-    });
+}
+
+export async function assistantIgnoreHandler(
+  editor: vscode.TextEditor,
+  edit: vscode.TextEditorEdit,
+  { allSuggestions, reference, threshold, responseId }: IgnoreAssistantSelection
+): Promise<void> {
+  try {
+    await setIgnore(responseId);
+    setDecorators([]);
+    const assistantVersion = await getAssistantVersion();
+
+    void vscode.commands.executeCommand(ASSISTANT_IGNORE_REFRESH_COMMAND);
+    const completion: Completion = {
+      value: IGNORE_VALUE,
+      score: 0,
+      message: "",
+    };
+    const eventData = eventDataOf(
+      editor,
+      completion,
+      allSuggestions,
+      reference,
+      threshold,
+      true,
+      assistantVersion
+    );
+    void setState(eventData);
+  } catch (error) {
+    Logger.error(error);
   }
-  
-  public registerDiagnosticHandler(): vscode.Disposable {
-    return vscode.commands.registerCommand('neoai.assistant.diagnose', async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        vscode.window.showErrorMessage('No active editor');
-        return;
-      }
-      
-      try {
-        const diagnostics = await this.client.requestDiagnostics(editor.document);
-        
-        // Clear existing diagnostics
-        const diagnosticCollection = vscode.languages.createDiagnosticCollection('neoai');
-        diagnosticCollection.clear();
-        
-        // Add new diagnostics
-        const diagnosticArray: vscode.Diagnostic[] = diagnostics.map(d => {
-          const range = new vscode.Range(
-            d.line || 0,
-            d.character || 0,
-            d.line || 0,
-            d.character || 0
-          );
-          return new vscode.Diagnostic(
-            range,
-            d.message || 'Unknown error',
-            this.getDiagnosticSeverity(d.severity)
-          );
-        });
-        
-        diagnosticCollection.set(editor.document.uri, diagnosticArray);
-      } catch (error) {
-        vscode.window.showErrorMessage(`Diagnostic error: ${error}`);
-      }
-    });
+}
+
+function eventDataOf(
+  editor: vscode.TextEditor,
+  currentSuggestion: Completion,
+  allSuggestions: Completion[],
+  reference: string,
+  threshold: string,
+  isIgnore = false,
+  assistantVersion: string
+): AssistantSelectionStateRequest {
+  let index = allSuggestions.findIndex((sug) => sug === currentSuggestion);
+  if (index === -1) {
+    index = allSuggestions.length;
   }
-  
-  private getDiagnosticSeverity(severity?: string): vscode.DiagnosticSeverity {
-    switch (severity) {
-      case 'error': return vscode.DiagnosticSeverity.Error;
-      case 'warning': return vscode.DiagnosticSeverity.Warning;
-      case 'info': return vscode.DiagnosticSeverity.Information;
-      default: return vscode.DiagnosticSeverity.Hint;
-    }
-  }
-  
-  public dispose(): void {
-    this.client.dispose();
-  }
+  const suggestions = allSuggestions.map((sug) => ({
+    length: sug.value.length,
+    strength: resolveDetailOf(sug),
+    origin: CompletionOrigin.CLOUD,
+  }));
+
+  const { length } = currentSuggestion.value;
+  const selectedSuggestion = currentSuggestion.value;
+  const strength = resolveDetailOf(currentSuggestion);
+  const origin = CompletionOrigin.CLOUD;
+  const language = editor.document.fileName.split(".").pop() || "";
+  const numOfSuggestions = allSuggestions.length;
+
+  const eventData: AssistantSelectionStateRequest = {
+    AssistantSelection: {
+      language,
+      length,
+      strength,
+      origin,
+      index,
+      threshold,
+      num_of_suggestions: numOfSuggestions,
+      suggestions,
+      selected_suggestion: selectedSuggestion,
+      reference,
+      reference_length: reference.length,
+      is_ignore: isIgnore,
+      assistant_version: assistantVersion,
+    },
+  };
+
+  return eventData;
+}
+
+function resolveDetailOf(completion: Completion): string {
+  return `${completion.score}%`;
 }

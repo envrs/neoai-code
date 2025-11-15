@@ -1,154 +1,262 @@
-import * as vscode from 'vscode';
-import { AssistantMode, DiagnosticSeverity } from './globals';
+import * as fs from "fs";
+import * as https from "https";
+import * as vscode from "vscode";
+import { getAssistantRootPath } from "../binary/paths";
+import { getState } from "../binary/requests/requests";
+import { State } from "../binary/state";
+import { asyncExists } from "../utils/file.utils";
+import sortBySemver from "../utils/semver.utils";
 
-/**
- * Utility functions for the NeoAI Assistant
- */
+const fsp = fs.promises;
+const assistantHost = "update.neoai.com";
+const assistantBinaryBaseName = "neoai-assistant";
+const statusBarItem = vscode.window.createStatusBarItem(
+  vscode.StatusBarAlignment.Right
+);
 
-export function debounce<T extends (...args: any[]) => any>(
-	func: T,
-	wait: number
-): (...args: Parameters<T>) => void {
-	let timeout: ReturnType<typeof setTimeout>;
-	return (...args: Parameters<T>) => {
-		clearTimeout(timeout);
-		timeout = setTimeout(() => func(...args), wait);
-	};
+export const StateType = {
+  threshold: "assistant-set-threshold-from-to",
+  toggle: "assistant-toggle",
+  clearCache: "validtor-clear-cache",
+};
+
+let state: State | null | undefined = null;
+
+export async function getAPIKey(): Promise<string> {
+  if (state === null) {
+    state = await getState();
+  }
+
+  return state?.api_key || "";
 }
 
-export function throttle<T extends (...args: any[]) => any>(
-	func: T,
-	limit: number
-): (...args: Parameters<T>) => void {
-	let inThrottle: boolean;
-	return (...args: Parameters<T>) => {
-		if (!inThrottle) {
-			func(...args);
-			inThrottle = true;
-			setTimeout(() => (inThrottle = false), limit);
-		}
-	};
+export async function downloadAssistantBinary(): Promise<boolean> {
+  if (state === null) {
+    state = await getState();
+  }
+  if (!state?.cloud_enabled) {
+    return false;
+  }
+
+  let neoAiVersionFromWeb: string;
+  try {
+    neoAiVersionFromWeb = await getNeoAiAssistantVersionFromWeb();
+  } catch (e) {
+    // network problem, check if there is already some version on the machine
+    try {
+      getFullPathToAssistantBinary();
+      return true;
+    } catch (error) {
+      // binary doesn't exist
+      return false;
+    }
+  }
+
+  if (await asyncExists(getFullPathToAssistantBinary(neoAiVersionFromWeb))) {
+    return true;
+  }
+
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      cancellable: true,
+      title: `downloading neoai assistant...`,
+    },
+    (progress, token) =>
+      new Promise((resolve, reject) => {
+        try {
+          const fullPath = getFullPathToAssistantBinary(neoAiVersionFromWeb);
+          const binaryDirPath = fullPath.slice(0, fullPath.lastIndexOf("/"));
+          void fsp.mkdir(binaryDirPath, { recursive: true }).then(() => {
+            let totalBinaryLength: string | undefined;
+            const requestDownload = https.get(
+              {
+                timeout: 10_000,
+                hostname: assistantHost,
+                path: `/assistant/${fullPath.slice(
+                  fullPath.indexOf(neoAiVersionFromWeb)
+                )}`,
+              },
+              (res) => {
+                const binaryFile = fs.createWriteStream(fullPath, {
+                  mode: 0o755,
+                });
+                binaryFile.on("error", (err) => reject(err));
+
+                let receivedBinaryLength = 0;
+                let binaryPercentage = 0;
+                res
+                  .on("data", (chunk: { length: number }) => {
+                    if (!totalBinaryLength) {
+                      return;
+                    }
+
+                    receivedBinaryLength += chunk.length;
+                    const newBinaryPercentage = Number(
+                      (
+                        (receivedBinaryLength * 100) /
+                        Number.parseInt(totalBinaryLength, 10)
+                      ).toFixed()
+                    );
+
+                    if (binaryPercentage === 0) {
+                      progress.report({ increment: 0 });
+                    } else if (newBinaryPercentage > binaryPercentage) {
+                      progress.report({ increment: 1 });
+                    }
+
+                    binaryPercentage = newBinaryPercentage;
+                  })
+                  .on("error", (err) => reject(err))
+                  .on("end", () => {
+                    if (token.isCancellationRequested) {
+                      return;
+                    }
+
+                    progress.report({ increment: 100 });
+                    void vscode.window.showInformationMessage(
+                      `NeoAi Assistant ${neoAiVersionFromWeb} binary is successfully downloaded`
+                    );
+                    resolve(true);
+                  })
+                  .pipe(binaryFile)
+                  .on("error", (err) => reject(err));
+
+                token.onCancellationRequested(() => {
+                  res.destroy();
+                  binaryFile.destroy();
+                });
+              }
+            );
+
+            requestDownload.on(
+              "response",
+              (res: { headers: Record<string, string> }) => {
+                statusBarItem.text = "neoai assistant: $(sync~spin)";
+                statusBarItem.tooltip = `downloading neoai assistant ${neoAiVersionFromWeb} binary`;
+                totalBinaryLength = res.headers["content-length"];
+              }
+            );
+            requestDownload.on("timeout", () =>
+              reject(new Error(`Request to assistant timed out`))
+            );
+            requestDownload.on("error", (err) => reject(err));
+
+            token.onCancellationRequested(() => {
+              fsp.unlink(fullPath).catch((err) => reject(err));
+              requestDownload.destroy(new Error("Canceled"));
+              reject(
+                new Error(
+                  "Download of neoai assistant binary has been cancelled"
+                )
+              );
+            });
+          });
+        } catch (err) {
+          reject(err);
+        }
+      })
+  );
 }
 
-export function isValidDocument(document: vscode.TextDocument): boolean {
-	if (!document) return false;
-	
-	// Check if document is not untitled and has a valid URI
-	if (document.uri.scheme === 'untitled') return false;
-	
-	// Check if document is not too large (limit to 1MB)
-	const content = document.getText();
-	if (content.length > 1024 * 1024) return false;
-	
-	// Check if document has supported language
-	const supportedLanguages = [
-		'typescript', 'javascript', 'python', 'java', 'csharp', 'cpp', 'c',
-		'go', 'rust', 'php', 'ruby', 'swift', 'kotlin', 'scala', 'html',
-		'css', 'json', 'xml', 'yaml', 'markdown', 'sql', 'shell'
-	];
-	
-	return supportedLanguages.includes(document.languageId);
+async function getNeoAiAssistantVersionFromWeb(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const requestVersion = https.get(
+      { timeout: 10_000, hostname: assistantHost, path: `/assistant/version` },
+      (res) => {
+        let output = "";
+        res.on("data", (chunk) => {
+          output += chunk;
+        });
+        res.on("end", () => resolve(output.trim()));
+        res.on("error", (err) => reject(err));
+      }
+    );
+    requestVersion.on("timeout", () =>
+      reject(new Error(`Request to assistant version timed out`))
+    );
+    requestVersion.on("error", (err) => reject(err));
+  });
 }
 
-export function getCurrentLineText(editor: vscode.TextEditor): string {
-	if (!editor) return '';
-	const position = editor.selection.active;
-	return editor.document.lineAt(position.line).text;
+export function getFullPathToAssistantBinary(version?: string): string {
+  const architecture = getArchitecture();
+  const { target, filename } = getTargetAndFileNameByPlatform();
+  const assistantBinariesPath = getAssistantRootPath();
+
+  if (version === undefined) {
+    const versions = sortBySemver(fs.readdirSync(assistantBinariesPath));
+    const versionToRun = versions
+      .map(
+        (currentVersion) =>
+          `${assistantBinariesPath}/${currentVersion}/${architecture}-${target}/${filename}`
+      )
+      .find((fullPath) => fs.existsSync(fullPath));
+
+    if (!versionToRun) {
+      throw new Error(
+        `Couldn't find a NeoAi Assistant binary (tried the following local versions: ${versions.join(
+          ", "
+        )})`
+      );
+    }
+
+    return versionToRun;
+  }
+
+  return `${assistantBinariesPath}/${version}/${architecture}-${target}/${filename}`;
 }
 
-export function getCurrentWord(editor: vscode.TextEditor): string {
-	if (!editor) return '';
-	const position = editor.selection.active;
-	const range = editor.document.getWordRangeAtPosition(position);
-	return range ? editor.document.getText(range) : '';
+function getArchitecture(): string {
+  if (process.arch === "x64") {
+    return "x86_64";
+  }
+  if (process.arch === "arm64") {
+    return "arm64";
+  }
+  throw new Error(
+    `Architecture "${process.arch}" is not supported by neoai assistant`
+  );
 }
 
-export function getSelectionText(editor: vscode.TextEditor): string {
-	if (!editor) return '';
-	const selection = editor.selection;
-	return editor.document.getText(selection);
+function getTargetAndFileNameByPlatform(): {
+  target: string;
+  filename: string;
+} {
+  if (process.platform === "win32") {
+    return {
+      target: "pc-windows-gnu",
+      filename: `${assistantBinaryBaseName}.exe`,
+    };
+  }
+  if (process.platform === "darwin") {
+    return { target: "apple-darwin", filename: assistantBinaryBaseName };
+  }
+  if (process.platform === "linux") {
+    return { target: "unknown-linux-musl", filename: assistantBinaryBaseName };
+  }
+  throw new Error(
+    `Platform "${process.platform}" is not supported by NeoAi Assistant`
+  );
 }
 
-// Simplified diagnostic creation since vscode.Diagnostic is not available
-export function createDiagnosticMessage(
-	message: string,
-	severity: DiagnosticSeverity = DiagnosticSeverity.Information
-): { message: string; severity: DiagnosticSeverity } {
-	return { message, severity };
+export function getNanoSecTime(): number {
+  const [seconds, remainingNanoSecs] = process.hrtime();
+
+  return seconds * 1000000000 + remainingNanoSecs;
 }
 
-export function formatFileSize(bytes: number): string {
-	const units = ['B', 'KB', 'MB', 'GB'];
-	let size = bytes;
-	let unitIndex = 0;
-	
-	while (size >= 1024 && unitIndex < units.length - 1) {
-		size /= 1024;
-		unitIndex++;
-	}
-	
-	return `${size.toFixed(1)} ${units[unitIndex]}`;
-}
-
-export function sanitizeFileName(name: string): string {
-	return name.replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-export function extractCodeFromMarkdown(markdown: string): string {
-	const codeBlockRegex = /```[\w]*\n?([\s\S]*?)```/g;
-	const matches = [];
-	let match;
-	
-	while ((match = codeBlockRegex.exec(markdown)) !== null) {
-		matches.push(match[1]);
-	}
-	
-	return matches.join('\n\n');
-}
-
-export function isPositionInRange(position: vscode.Position, range: vscode.Range): boolean {
-	return position.isAfterOrEqual(range.start) && position.isBeforeOrEqual(range.end);
-}
-
-export function getRelativePath(uri: vscode.Uri): string {
-	// Simple relative path calculation
-	const fsPath = uri.fsPath;
-	const parts = fsPath.split('/');
-	return parts.slice(-2).join('/'); // Return last 2 parts as relative path
-}
-
-// Simplified quick pick since showQuickPick is not available
-export async function showQuickPick<T>(
-	items: T[],
-	placeholder: string
-): Promise<T | undefined> {
-	// Fallback to simple input selection
-	const itemsStr = items.map((item, index) => `${index + 1}. ${item}`).join('\n');
-	const choice = await vscode.window.showInformationMessage(
-		`${placeholder}\n\n${itemsStr}\n\nEnter choice number (1-${items.length}):`,
-		...items.map(item => String(item))
-	);
-	
-	return items.find(item => String(item) === choice);
-}
-
-export function getExtensionVersion(): string {
-	// Fallback version since extensions API is not available
-	return '1.0.0';
-}
-
-export function logMessage(message: string, level: 'info' | 'warn' | 'error' = 'info'): void {
-	const timestamp = new Date().toISOString();
-	const logMessage = `[${timestamp}] [NeoAI] ${message}`;
-	
-	switch (level) {
-		case 'error':
-			console.error(logMessage);
-			break;
-		case 'warn':
-			console.warn(logMessage);
-			break;
-		default:
-			console.log(logMessage);
-	}
+export function debounce(
+  this: unknown,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  func: (...args: any[]) => unknown,
+  timeout = 500
+): (...args: unknown[]) => unknown {
+  let timer: NodeJS.Timeout;
+  return (...args: unknown[]) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      func.apply(this, args);
+    }, timeout);
+  };
 }

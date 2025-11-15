@@ -1,121 +1,116 @@
-import * as vscode from 'vscode';
-import { spawn, ChildProcess } from 'child_process';
-import { NeoAiCancellationToken } from './CancellationToken';
+import { Mutex } from "await-semaphore";
+import * as child_process from "child_process";
+import * as readline from "readline";
+import run from "./runAssistant";
+import { Logger } from "../utils/logger";
 
-export interface AssistantProcessOptions {
-  command: string;
-  args?: string[];
-  cwd?: string;
-  env?: Record<string, string>;
-  cancellationToken?: NeoAiCancellationToken;
-}
+export default class AssistantProcess {
+  private proc?: child_process.ChildProcess;
 
-export class AssistantProcess {
-  private process: ChildProcess | null = null;
-  private cancellationToken?: NeoAiCancellationToken;
-  
-  constructor(private options: AssistantProcessOptions) {
-    this.cancellationToken = options.cancellationToken;
+  private rl?: readline.ReadLine;
+
+  private numRestarts = 0;
+
+  private childDead = false;
+
+  private mutex: Mutex = new Mutex();
+
+  private resolveMap = new Map();
+
+  private isShutdown = false;
+
+  constructor() {
+    this.restartChild();
   }
-  
-  public async start(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const { command, args = [], cwd, env } = this.options;
-      
-      this.process = spawn(command, args, {
-        cwd: cwd || vscode.workspace.rootPath,
-        env: { ...process.env, ...env }
-      });
-      
-      if (!this.process) {
-        reject(new Error('Failed to start process'));
-        return;
+
+  async post<T extends { id: number; version: string }, R>(
+    anyRequest: T,
+    id: number,
+    timeToSleep = 10000
+  ): Promise<R | undefined> {
+    const release = await this.mutex.acquire();
+
+    try {
+      if (!this.isChildAlive()) {
+        this.restartChild();
       }
-      
-      this.process.on('error', (error) => {
-        reject(error);
+      const request = `${JSON.stringify(anyRequest)}\n`;
+      this.proc?.stdin?.write(request, "utf8");
+
+      return await new Promise((resolve, reject) => {
+        this.resolveMap.set(id, resolve);
+        setTimeout(() => {
+          this.resolveMap.delete(id);
+          reject(new Error("Timeout"));
+        }, timeToSleep);
       });
-      
-      this.process.on('spawn', () => {
-        resolve();
-      });
-      
-      this.process.on('exit', (code, signal) => {
-        if (code !== 0) {
-          console.warn(`Process exited with code ${code}, signal ${signal}`);
-        }
-        this.process = null;
-      });
-      
-      // Handle cancellation
-      if (this.cancellationToken) {
-        const disposable = this.cancellationToken.onCancellationRequested(() => {
-          this.kill();
-          disposable.dispose();
-        });
-      }
-    });
-  }
-  
-  public async sendInput(data: string): Promise<void> {
-    if (!this.process || !this.process.stdin) {
-      throw new Error('Process not running or stdin not available');
-    }
-    
-    return new Promise((resolve, reject) => {
-      this.process!.stdin!.write(data, (error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-    });
-  }
-  
-  public async getOutput(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      if (!this.process) {
-        reject(new Error('Process not started'));
-        return;
-      }
-      
-      let output = '';
-      
-      if (this.process.stdout) {
-        this.process.stdout.on('data', (data) => {
-          output += data.toString();
-        });
-      }
-      
-      if (this.process.stderr) {
-        this.process.stderr.on('data', (data) => {
-          output += data.toString();
-        });
-      }
-      
-      this.process.on('exit', () => {
-        resolve(output);
-      });
-      
-      this.process.on('error', (error) => {
-        reject(error);
-      });
-    });
-  }
-  
-  public kill(): void {
-    if (this.process) {
-      this.process.kill();
-      this.process = null;
+    } catch (e) {
+      Logger.error(`interacting with neoai assistant: ${e}`);
+      return undefined;
+    } finally {
+      release();
     }
   }
-  
-  public isRunning(): boolean {
-    return this.process !== null && !this.process.killed;
+
+  get shutdowned(): boolean {
+    return this.isShutdown;
   }
-  
-  public dispose(): void {
-    this.kill();
+
+  set shutdowned(value: boolean) {
+    this.isShutdown = value;
+  }
+
+  private isChildAlive(): boolean {
+    return !!this.proc && !this.childDead;
+  }
+
+  private onChildDeath() {
+    this.childDead = true;
+
+    setTimeout(() => {
+      if (!this.isChildAlive()) {
+        this.restartChild();
+      }
+    }, 10000);
+  }
+
+  private restartChild<R>(): void {
+    if (this.numRestarts >= 10) {
+      return;
+    }
+    this.numRestarts += 1;
+    if (this.proc) {
+      this.proc.kill();
+    }
+    this.proc = run();
+    this.childDead = false;
+    this.proc.on("exit", () => {
+      if (!this.shutdowned) {
+        this.onChildDeath();
+      }
+    });
+    this.proc.stdin?.on("error", (error) => {
+      Logger.error(`assistant binary stdin error: ${error.message}`);
+      this.onChildDeath();
+    });
+    this.proc.stdout?.on("error", (error) => {
+      Logger.error(`assistant binary stdout error: ${error.message}`);
+      this.onChildDeath();
+    });
+    this.proc.unref(); // AIUI, this lets Node exit without waiting for the child
+    this.rl = readline.createInterface({
+      input: this.proc.stdout,
+      output: this.proc.stdin,
+    } as readline.ReadLineOptions);
+    this.rl.on("line", (line) => {
+      const result = JSON.parse(line) as { id: number; body: R };
+      const { id } = result;
+      const { body } = result;
+      const resolve = this.resolveMap.get(id) as (data: R) => void | undefined;
+      if (resolve) {
+        resolve(body);
+        this.resolveMap.delete(id);
+      }
+    });
   }
 }

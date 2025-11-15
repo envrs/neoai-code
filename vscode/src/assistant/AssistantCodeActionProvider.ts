@@ -1,76 +1,90 @@
-import * as vscode from 'vscode';
-import { AssistantClient } from './AssistantClient';
+import * as vscode from "vscode";
+import { Completion } from "./Completion";
+import { getAssistantMode, AssistantMode } from "./AssistantMode";
 
-export class AssistantCodeActionProvider implements vscode.CodeActionProvider {
-  private static readonly providedCodeActionKinds = [
+import {
+  ASSISTANT_IGNORE_COMMAND,
+  ASSISTANT_SELECTION_COMMAND,
+  NEOAI_DIAGNOSTIC_CODE,
+} from "./globals";
+import NeoAiDiagnostic from "./NeoAiDiagnostic";
+
+export default class AssistantCodeActionProvider
+  implements vscode.CodeActionProvider {
+  public static readonly providedCodeActionKinds = [
     vscode.CodeActionKind.QuickFix,
-    vscode.CodeActionKind.Refactor,
-    vscode.CodeActionKind.RefactorRewrite
   ];
 
-  public static readonly metadata: vscode.CodeActionProviderMetadata = {
-    providedCodeActionKinds: AssistantCodeActionProvider.providedCodeActionKinds
-  };
-
-  public provideCodeActions(
+  // This method implements vscode.CodeActionProvider
+  // eslint-disable-next-line class-methods-use-this
+  provideCodeActions(
     document: vscode.TextDocument,
     range: vscode.Range | vscode.Selection,
-    context: vscode.CodeActionContext,
-    token: vscode.CancellationToken
+    context: vscode.CodeActionContext
   ): vscode.CodeAction[] {
-    const actions: vscode.CodeAction[] = [];
-    
-    // Only provide actions for diagnostics with our source
-    const relevantDiagnostics = context.diagnostics.filter(d => d.source === 'neoai-assistant');
-    
-    if (relevantDiagnostics.length === 0) {
-      return actions;
-    }
-    
-    // Create quick fix action
-    const quickFixAction = new vscode.CodeAction(
-      'NeoAI Quick Fix',
-      vscode.CodeActionKind.QuickFix
-    );
-    quickFixAction.command = {
-      command: 'neoai.assistant.quickFix',
-      title: 'Apply NeoAI Quick Fix',
-      arguments: [document, range]
-    };
-    actions.push(quickFixAction);
-    
-    // Create refactor action
-    const refactorAction = new vscode.CodeAction(
-      'NeoAI Refactor',
-      vscode.CodeActionKind.RefactorRewrite
-    );
-    refactorAction.command = {
-      command: 'neoai.assistant.refactor',
-      title: 'Refactor with NeoAI',
-      arguments: [document, range]
-    };
-    actions.push(refactorAction);
-    
-    // Create explain action
-    const explainAction = new vscode.CodeAction(
-      'NeoAI Explain',
-      vscode.CodeActionKind.QuickFix
-    );
-    explainAction.command = {
-      command: 'neoai.assistant.explain',
-      title: 'Explain with NeoAI',
-      arguments: [document, range]
-    };
-    actions.push(explainAction);
-    
-    return actions;
+    const codeActions: vscode.CodeAction[] = [];
+    const diagnostics = context.diagnostics as NeoAiDiagnostic[];
+    diagnostics
+      .filter((diagnostic) => diagnostic.code === NEOAI_DIAGNOSTIC_CODE)
+      .forEach((diagnostic) => {
+        diagnostic.choices.forEach((choice) => {
+          codeActions.push(createCodeAction(document, diagnostic, choice));
+        });
+        // register ignore action
+        const title = "Ignore NeoAi Assistant suggestions at this spot";
+        const action = new vscode.CodeAction(
+          title,
+          vscode.CodeActionKind.QuickFix
+        );
+        action.command = {
+          arguments: [
+            {
+              allSuggestions: diagnostic.choices,
+              reference: diagnostic.reference,
+              threshold: diagnostic.threshold,
+              responseId: diagnostic.responseId,
+            },
+          ],
+          command: ASSISTANT_IGNORE_COMMAND,
+          title: "ignore replacement",
+        };
+        codeActions.push(action);
+      });
+    return codeActions;
   }
-  
-  public resolveCodeAction(
-    codeAction: vscode.CodeAction,
-    token: vscode.CancellationToken
-  ): vscode.CodeAction {
-    // Resolve additional details for code action
-    return codeAction;
+}
+
+function createCodeAction(
+  document: vscode.TextDocument,
+  diagnostic: NeoAiDiagnostic,
+  choice: Completion
+): vscode.CodeAction {
+  const { range } = diagnostic;
+  const title = `${choice.message} '${choice.value}'`;
+  const action = new vscode.CodeAction(title, vscode.CodeActionKind.QuickFix);
+  action.edit = new vscode.WorkspaceEdit();
+  action.edit.replace(
+    document.uri,
+    new vscode.Range(range.start, range.end),
+    choice.value
+  );
+  if (getAssistantMode() === AssistantMode.Paste) {
+    diagnostic.references.forEach((r) =>
+      action.edit?.replace(document.uri, r, choice.value)
+    );
   }
+  action.diagnostics = [diagnostic];
+  action.command = {
+    arguments: [
+      {
+        currentSuggestion: choice,
+        allSuggestions: diagnostic.choices,
+        reference: diagnostic.reference,
+        threshold: diagnostic.threshold,
+      },
+    ],
+    command: ASSISTANT_SELECTION_COMMAND,
+    title: "accept replacement",
+  };
+  return action;
 }

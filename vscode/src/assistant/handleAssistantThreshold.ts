@@ -1,51 +1,62 @@
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
+import { getAssistantMode, AssistantMode } from "./AssistantMode";
+import { StateType } from "./utils";
+import setState from "../binary/requests/setState";
+import { StatePayload } from "../globals/consts";
+import {
+  ASSISTANT_IGNORE_REFRESH_COMMAND,
+  ASSISTANT_SET_THRESHOLD_COMMAND,
+  THRESHOLD_STATE_KEY,
+} from "./globals";
 
-export interface ThresholdConfig {
-  maxFileSize: number;
-  maxSelectionSize: number;
-  maxResponseTime: number;
+let backgroundThreshold = "Medium";
+
+export function initAssistantThreshold(context: vscode.ExtensionContext): void {
+  backgroundThreshold =
+    context.workspaceState.get(THRESHOLD_STATE_KEY, backgroundThreshold) ||
+    backgroundThreshold;
+
+  registerSetThresholdCommand(context);
 }
 
-export const DEFAULT_THRESHOLD: ThresholdConfig = {
-  maxFileSize: 1024 * 1024, // 1MB
-  maxSelectionSize: 10000,   // 10KB
-  maxResponseTime: 30000    // 30 seconds
-};
+export function getBackgroundThreshold(): string {
+  return backgroundThreshold;
+}
 
-export class AssistantThresholdHandler {
-  private config: ThresholdConfig;
-  
-  constructor(config: Partial<ThresholdConfig> = {}) {
-    this.config = { ...DEFAULT_THRESHOLD, ...config };
-  }
-  
-  public checkFileSize(fileSize: number): boolean {
-    return fileSize <= this.config.maxFileSize;
-  }
-  
-  public checkSelectionSize(selectionSize: number): boolean {
-    return selectionSize <= this.config.maxSelectionSize;
-  }
-  
-  public async checkResponseTime<T>(
-    operation: () => Promise<T>,
-    timeout: number = this.config.maxResponseTime
-  ): Promise<T> {
-    return Promise.race([
-      operation(),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Operation timed out')), timeout);
-      })
-    ]);
-  }
-  
-  public showThresholdWarning(type: 'file' | 'selection' | 'time'): void {
-    const messages = {
-      file: `File size exceeds limit (${this.config.maxFileSize / 1024 / 1024}MB)`,
-      selection: `Selection size exceeds limit (${this.config.maxSelectionSize / 1024}KB)`,
-      time: `Operation took too long (>${this.config.maxResponseTime / 1000}s)`
-    };
-    
-    vscode.window.showWarningMessage(messages[type]);
+function registerSetThresholdCommand(context: vscode.ExtensionContext) {
+  if (getAssistantMode() === AssistantMode.Background) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        ASSISTANT_SET_THRESHOLD_COMMAND,
+        async () => {
+          const prevThreshold = backgroundThreshold;
+          const options: vscode.QuickPickOptions = {
+            canPickMany: false,
+            placeHolder: `Pick threshold (Currently: ${backgroundThreshold})`,
+          };
+          const items = ["Low", "Medium", "High"];
+          const value = await vscode.window.showQuickPick(items, options);
+          if (value && items.includes(value)) {
+            backgroundThreshold = value;
+            await context.workspaceState.update(
+              THRESHOLD_STATE_KEY,
+              backgroundThreshold
+            );
+            void setState({
+              [StatePayload.STATE]: {
+                state_type: StateType.threshold,
+                state: JSON.stringify({
+                  from: prevThreshold,
+                  to: backgroundThreshold,
+                }),
+              },
+            });
+            void vscode.commands.executeCommand(
+              ASSISTANT_IGNORE_REFRESH_COMMAND
+            );
+          }
+        }
+      )
+    );
   }
 }

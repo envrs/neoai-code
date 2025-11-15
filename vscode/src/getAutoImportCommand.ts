@@ -1,22 +1,27 @@
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
+import { AutocompleteResult, ResultEntry } from "./binary/requests/requests";
+import { SuggestionTrigger } from "./globals/consts";
+import { COMPLETION_IMPORTS } from "./selectionHandler";
 
-export function getAutoImportCommand(): vscode.Disposable {
-  return vscode.commands.registerCommand('neoai.getAutoImport', async () => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showErrorMessage('No active editor');
-      return;
-    }
-    
-    const selection = editor.selection;
-    const selectedText = editor.document.getText(selection);
-    
-    if (!selectedText) {
-      vscode.window.showInformationMessage('Please select a symbol to auto-import');
-      return;
-    }
-    
-    // TODO: Implement auto-import logic
-    vscode.window.showInformationMessage(`Auto-import for "${selectedText}" not yet implemented`);
-  });
+export default function getAutoImportCommand(
+  result: ResultEntry,
+  response: AutocompleteResult | undefined,
+  position: vscode.Position,
+  suggestionTrigger?: SuggestionTrigger
+): vscode.Command {
+  return {
+    arguments: [
+      {
+        currentCompletion: result.new_prefix,
+        completions: response?.results,
+        position,
+        limited: response?.is_locked,
+        snippetContext: result.completion_metadata?.snippet_context,
+        oldPrefix: response?.old_prefix,
+        suggestionTrigger,
+      },
+    ],
+    command: COMPLETION_IMPORTS,
+    title: "accept completion",
+  };
 }

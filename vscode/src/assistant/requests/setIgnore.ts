@@ -1,32 +1,12 @@
-import * as vscode from 'vscode';
-import { RequestHandler } from './request';
+import { request } from "./request";
 
-export interface SetIgnoreRequest {
-  pattern: string;
-  isIgnored: boolean;
-  scope?: 'global' | 'workspace' | 'file';
-}
-
-export interface SetIgnoreResponse {
-  success: boolean;
-  message: string;
-}
-
-export async function setIgnore(request: SetIgnoreRequest): Promise<SetIgnoreResponse> {
-  try {
-    const response = await RequestHandler.makeVSCodeRequest({
-      url: 'https://api.neoai.com/ignore',
-      method: 'POST',
-      body: request
-    });
-    
-    return response.data as SetIgnoreResponse;
-  } catch (error) {
-    console.error('Failed to set ignore:', error);
-    vscode.window.showErrorMessage(`Failed to set ignore pattern: ${error}`);
-    return { 
-      success: false,
-      message: 'Failed to set ignore pattern'
-    };
-  }
+export default function setIgnore(responseId: string): Promise<string[]> {
+  const method = "set_ignore";
+  const body = {
+    method,
+    params: {
+      responseId,
+    },
+  };
+  return request(body) as Promise<string[]>;
 }

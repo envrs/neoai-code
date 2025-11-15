@@ -1,46 +1,24 @@
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
+import NeoaiInlineCompletionItem from "./inlineSuggestions/neoaiInlineCompletionItem";
+import suggestionShown from "./binary/requests/suggestionShown";
+import { ResultEntry } from "./binary/requests/requests";
 
-export interface SuggestionReport {
-  suggestion: string;
-  accepted: boolean;
-  timestamp: number;
-  document: string;
-  language: string;
-}
+let lastShownSuggestion: ResultEntry | undefined | null;
 
-export class SuggestionReporter {
-  private static instance: SuggestionReporter;
-  private reports: SuggestionReport[] = [];
-  
-  private constructor() {}
-  
-  public static getInstance(): SuggestionReporter {
-    if (!SuggestionReporter.instance) {
-      SuggestionReporter.instance = new SuggestionReporter();
-    }
-    return SuggestionReporter.instance;
+export default function reportSuggestionShown(
+  document: vscode.TextDocument,
+  completions?: vscode.InlineCompletionList<NeoaiInlineCompletionItem>
+): void {
+  const item = completions?.items[0]?.suggestionEntry;
+
+  if (item && !lastShownSuggestion?.new_prefix.endsWith(item.new_prefix)) {
+    void suggestionShown({
+      SuggestionShown: {
+        net_length: item.new_prefix.length,
+        filename: document.fileName,
+        metadata: item.completion_metadata,
+      },
+    });
   }
-  
-  public reportSuggestion(suggestion: string, accepted: boolean, document: vscode.TextDocument): void {
-    const report: SuggestionReport = {
-      suggestion,
-      accepted,
-      timestamp: Date.now(),
-      document: document.fileName,
-      language: document.languageId
-    };
-    
-    this.reports.push(report);
-    
-    // TODO: Send to analytics service
-    console.log('Suggestion reported:', report);
-  }
-  
-  public getReports(): SuggestionReport[] {
-    return [...this.reports];
-  }
-  
-  public clearReports(): void {
-    this.reports = [];
-  }
+  lastShownSuggestion = item;
 }
