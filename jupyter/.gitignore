@@ -1,0 +1,8 @@
+.DS_Store
+.ipynb_checkpoints
+build
+dist
+*.egg-info
+*.ipynb
+go/cmd/binaries
+.idea

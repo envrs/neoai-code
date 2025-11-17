@@ -1,0 +1,509 @@
+{
+  "publisher": "NeoAi",
+  "name": "neoai-vscode",
+  "version": "3.51.0",
+  "displayName": "Neoai: AI Chat & Autocomplete for JavaScript, Python, Typescript, Java, PHP, Go, and more",
+  "description": "Neoai is the AI code assistant that accelerates and simplifies software development while keeping your code private, secure, and compliant. It provides accurate, highly personalized results for generating code, writing unit tests, creating documentation, explaining legacy code, fixing code, and much more. ",
+  "icon": "small_logo.png",
+  "galleryBanner": {
+    "color": "#100f11",
+    "theme": "dark"
+  },
+  "badges": [
+    {
+      "url": "https://img.shields.io/github/stars/neopilot-ai/Neoai?style=social",
+      "description": "Star Neoai on Github",
+      "href": "https://github.com/neopilot-ai/NeoAi"
+    },
+    {
+      "url": "https://img.shields.io/twitter/follow/Neoai?style=social",
+      "description": "Follow Neoai on Twitter",
+      "href": "https://x.com/Neoai"
+    },
+    {
+      "url": "https://img.shields.io/visual-studio-marketplace/r/NeoAi.neoai-vscode?logo=visual-studio-code&style=social",
+      "description": "Rate us in VSCode Marketplace",
+      "href": "https://marketplace.visualstudio.com/items?itemName=NeoAi.neoai-vscode"
+    },
+    {
+      "url": "https://img.shields.io/youtube/channel/views/UC3ZLFXRRmK3XbT5Oq0qPLqA?style=social",
+      "description": "Watch Neoai demo video",
+      "href": "https://www.youtube.com/watch?v=KuuitKbia4g"
+    }
+  ],
+  "homepage": "https://neoai.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neopilot-ai/neoai-vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/neopilot-ai/neoai-vscode/issues",
+    "email": "support@neoai.com"
+  },
+  "engines": {
+    "vscode": "^1.50.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Machine Learning",
+    "Education",
+    "Other"
+  ],
+  "keywords": [
+    "javascript",
+    "python",
+    "typescript",
+    "php",
+    "autocomplete",
+    "chat",
+    "code completion",
+    "ruby",
+    "java",
+    "go",
+    "golang",
+    "bash",
+    "kotlin",
+    "html",
+    "css",
+    "ocaml",
+    "perl",
+    "rust",
+    "julia",
+    "lua",
+    "haskell",
+    "c",
+    "cpp",
+    "c++",
+    "csharp",
+    "c#",
+    "react",
+    "swift",
+    "objective-c",
+    "objectivec",
+    "ai",
+    "method completion",
+    "intellicode",
+    "intellisense",
+    "snippets",
+    "kite",
+    "nodejs",
+    "node",
+    "node.js",
+    "jupyter",
+    "documentation",
+    "refactor",
+    "AI-assisted code completion",
+    "AI-powered code completion",
+    "AI copilot",
+    "AI code snippets",
+    "code suggestion",
+    "code prediction",
+    "code hinting",
+    "content assist",
+    "unit test generation",
+    "documentation generation"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension",
+  "scripts": {
+    "analyze:bundle": "webpack --env analyzeBundle",
+    "vscode:prepublish": "yarn --frozen-lockfile && yarn clear-out && webpack --mode production --env ${MODE:-public}",
+    "compile": "webpack --mode development --watch",
+    "build": "webpack --mode development",
+    "build:enterprise": "webpack --mode development --env enterprise",
+    "test:copyassets": "ncp ./src/test/fixture ./out/test/fixture/",
+    "prettier": "prettier --write .",
+    "prettier:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "pretest": "yarn clear-out && tsc && yarn test:copyassets",
+    "test": "node ./out/test/runTest.js",
+    "vsce:package": "vsce package",
+    "vsce:package:enterprise": "MODE=enterprise vsce package",
+    "vsce:publish": "vsce publish",
+    "ovsx:publish": "ovsx publish",
+    "clear-out": "rimraf ./out",
+    "verify-package-metadata": "node ./verify-package-metadata.js"
+  },
+  "peerDependencies": {
+    "vscode": "^1.1.37"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.2.14",
+    "@types/debounce": "^1.2.1",
+    "@types/diff": "^5.0.2",
+    "@types/glob": "^7.1.3",
+    "@types/mocha": "^8.2.2",
+    "@types/mock-fs": "^4.13.0",
+    "@types/ncp": "^2.0.4",
+    "@types/node": "^12.0.10",
+    "@types/rimraf": "^3.0.0",
+    "@types/semver": "^7.3.4",
+    "@types/sinon": "^9.0.11",
+    "@types/tmp": "^0.2.0",
+    "@types/underscore": "^1.11.15",
+    "@types/vscode": "^1.50.0",
+    "@types/yauzl": "^2.9.1",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^4.18.0",
+    "@vscode/test-electron": "^2.3.6",
+    "@vscode/vsce": "^2.22.0",
+    "assert": "^2.0.0",
+    "chai": "^4.2.0",
+    "chai-shallow-deep-equal": "^1.4.6",
+    "deep-object-diff": "^1.1.0",
+    "eslint": "^8.28.0",
+    "eslint-config-airbnb-typescript": "^12.3.1",
+    "eslint-config-prettier": "^8.2.0",
+    "eslint-import-resolver-typescript": "^3.5.2",
+    "eslint-plugin-import": "^2.26.0",
+    "glob": "^7.1.6",
+    "husky": "^5.1.2",
+    "lint-staged": "^13.0.4",
+    "mocha": "^10.1.0",
+    "mocha-teamcity-reporter": "^3.0.0",
+    "mock-fs": "^4.13.0",
+    "ncp": "^2.0.0",
+    "ovsx": "^0.8.3",
+    "prettier": "2.2.1",
+    "rimraf": "^3.0.2",
+    "sinon": "^10.0.0",
+    "terser-webpack-plugin": "^5.3.6",
+    "ts-loader": "^9.4.1",
+    "ts-mockito": "^2.6.1",
+    "typescript": "^4.2.2",
+    "webpack": "^5.75.0",
+    "webpack-bundle-analyzer": "^4.7.0",
+    "webpack-cli": "^5.0.0"
+  },
+  "dependencies": {
+    "await-semaphore": "^0.1.3",
+    "axios": "^0.21.0",
+    "debounce": "^1.2.1",
+    "diff": "^5.0.0",
+    "eslint-plugin-no-only-tests": "^3.1.0",
+    "extract-zip": "^2.0.1",
+    "https-proxy-agent": "^5.0.1",
+    "semver": "^7.3.2",
+    "systeminformation": "^5.6.10",
+    "tmp": "^0.2.1",
+    "underscore": "^1.13.6",
+    "vscode-extension-telemetry": "^0.1.7"
+  },
+  "capabilities": {
+    "virtualWorkspaces": true,
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "submenus": [
+      {
+        "id": "neoai.chat.submenu",
+        "label": "Neoai"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "neoai",
+          "title": "Neoai AI",
+          "icon": "small_logo.png"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "neoai.loading",
+        "contents": "Loading please wait..."
+      }
+    ],
+    "views": {
+      "neoai": [
+        {
+          "type": "webview",
+          "id": "neoai.chat",
+          "name": "Chat",
+          "when": "neoai.chat.webview == 'chat'"
+        },
+        {
+          "id": "neoai.chat.preview_ended",
+          "type": "webview",
+          "name": "Preview ended",
+          "when": "neoai.chat.webview == 'preview_ended'"
+        },
+        {
+          "id": "neoai.chat.welcome",
+          "type": "webview",
+          "name": "Welcome to Chat",
+          "when": "neoai.chat.webview == 'capability_required'"
+        },
+        {
+          "id": "neoai.chat.authenticate",
+          "type": "webview",
+          "name": "Please log in",
+          "when": "neoai.chat.webview == 'authnetication_required'"
+        },
+        {
+          "id": "neoai.chat.not_part_of_a_team",
+          "type": "webview",
+          "name": "Please join a team",
+          "when": "neoai.chat.webview == 'part_of_a_team_required'"
+        },
+        {
+          "id": "neoai.loading",
+          "name": "Loading",
+          "when": "neoai.chat.webview == 'loading'"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "neoai.chat.commands.explain-code",
+        "title": "Explain this code",
+        "category": "command"
+      },
+      {
+        "command": "neoai.chat.commands.generate-tests",
+        "title": "Generate tests",
+        "category": "command"
+      },
+      {
+        "command": "neoai.chat.commands.document-code",
+        "title": "Document this code",
+        "category": "command"
+      },
+      {
+        "command": "neoai.chat.commands.fix-code",
+        "title": "Fix this code",
+        "category": "command"
+      },
+      {
+        "command": "neoai.chat.submit-message",
+        "title": "Submit message",
+        "when": "neoai.chat.eval && neoai.chat.ready"
+      },
+      {
+        "command": "neoai.chat.state",
+        "title": "Chat global state",
+        "when": "neoai.chat.eval && neoai.chat.ready"
+      },
+      {
+        "command": "neoai.chat.clear-all-conversations",
+        "title": "Clear all neoai chat conversations",
+        "when": "neoai.chat.eval && neoai.chat.ready"
+      },
+      {
+        "command": "NeoAi::config",
+        "title": "Neoai: Open Settings"
+      },
+      {
+        "command": "NeoAi::configExternal",
+        "title": "Neoai: Open Settings in external viewer"
+      },
+      {
+        "command": "NeoAi::assistantClearCache",
+        "title": "Neoai: Clear Assistant Cache"
+      },
+      {
+        "command": "NeoAi::assistantSetThreshold",
+        "title": "Neoai: Set Assistant Threshold"
+      },
+      {
+        "command": "NeoAi::assistantToggle",
+        "title": "Neoai: Toggle Assistant"
+      },
+      {
+        "command": "Neoai.hideSuggestion",
+        "title": "Hide",
+        "icon": {
+          "dark": "assets/close_inverse.svg",
+          "light": "assets/close.svg"
+        }
+      },
+      {
+        "command": "Neoai.applySuggestion",
+        "title": "Apply",
+        "icon": {
+          "dark": "assets/approve_inverse.svg",
+          "light": "assets/approve.svg"
+        }
+      },
+      {
+        "command": "neoai.logs",
+        "title": "Neoai: Open Logs"
+      },
+      {
+        "command": "neoai.signInUsingAuthToken",
+        "title": "Neoai: Sign in using auth token"
+      },
+      {
+        "command": "neoai.chat.focus-input",
+        "title": "Focus chat input"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "neoai.chat.submenu",
+          "group": "0__Neoai",
+          "when": "neoai.chat.ready"
+        }
+      ],
+      "neoai.chat.submenu": [
+        {
+          "command": "neoai.chat.commands.explain-code"
+        },
+        {
+          "command": "neoai.chat.commands.generate-tests"
+        },
+        {
+          "command": "neoai.chat.commands.document-code"
+        },
+        {
+          "command": "neoai.chat.commands.fix-code"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "NeoAi::assistantClearCache",
+          "when": "neoai-assistant:enabled && neoai-assistant:background"
+        },
+        {
+          "command": "NeoAi::assistantSetThreshold",
+          "when": "neoai-assistant:enabled && neoai-assistant:background"
+        },
+        {
+          "command": "NeoAi::assistantToggle",
+          "when": "neoai-assistant:capability"
+        },
+        {
+          "command": "NeoAi::configExternal",
+          "when": "!neoai.enterprise"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "Neoai.hideSuggestion",
+          "group": "navigation",
+          "when": "commentController == neoai.commentController"
+        },
+        {
+          "command": "Neoai.applySuggestion",
+          "group": "navigation",
+          "when": "commentController == neoai.commentController"
+        }
+      ]
+    },
+    "configuration": [
+      {
+        "title": "Neoai",
+        "properties": {
+          "neoai.disableLineRegex": {
+            "type": "array",
+            "default": [],
+            "description": "Disable Neoai when the current line contains a match of any of the provided regexes. For example, add \"require\" to disable Neoai when the current line contains the word 'require'."
+          },
+          "neoai.disableFileRegex": {
+            "type": "array",
+            "default": [],
+            "description": "Disable Neoai when the file path contains a match of any of the provided regexes. For example, add \"[.]js$\" to disable Neoai in JavaScript files."
+          },
+          "neoai.experimentalAutoImports": {
+            "type": [
+              "boolean",
+              null,
+              "number"
+            ],
+            "default": null,
+            "description": "Experimental: Enable modules auto-import following applying Neoai suggestions"
+          },
+          "neoai.logFilePath": {
+            "type": "string",
+            "description": "Neoai's log file (Visual Studio Code must be restarted for this setting to take effect)"
+          },
+          "neoai.logLevel": {
+            "type": "string",
+            "description": "Neoai's log level (Visual Studio Code must be restarted for this setting to take effect)"
+          },
+          "neoai.receiveBetaChannelUpdates": {
+            "type": "boolean",
+            "default": false,
+            "description": "Receive Neoai VSCode extention beta updates"
+          },
+          "neoai.debounceMilliseconds": {
+            "type": "number",
+            "default": 0,
+            "description": "debounce milliseconds before rendering neoai suggestion"
+          },
+          "neoai.snoozeDuration": {
+            "type": "number",
+            "default": 1,
+            "description": "Hours to disable inline completions when clicking the snooze button",
+            "minimum": 1,
+            "maximum": 24
+          },
+          "neoai.useProxySupport": {
+            "type": "boolean",
+            "default": true,
+            "description": "Use the proxy support for Neoai (Visual Studio Code must be restarted for this setting to take effect)"
+          },
+          "neoai.ignoreCertificateErrors": {
+            "type": "boolean",
+            "default": false,
+            "description": "Ignore SSL certificate errors when calling Neoai API (restart to take effect)"
+          },
+          "neoai.cloudHost": {
+            "type": "string",
+            "default": null,
+            "description": "The neoai cloud host to connect to (restart to take effect)",
+            "when": "neoai.enterprise"
+          },
+          "neoai.logEngine": {
+            "type": "boolean",
+            "default": false,
+            "description": "Log Neoai engine process (Visual Studio Code must be restarted for this setting to take effect)"
+          },
+          "neoai.codeLensEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable/Disable Neoai code actions (Visual Studio Code must be restarted for this setting to take effect)"
+          }
+        }
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "tab",
+        "command": "neoai.tab-override",
+        "when": "neoai.tab-override && suggestWidgetHasFocusedSuggestion && suggestWidgetVisible && textInputFocus"
+      },
+      {
+        "key": "tab",
+        "command": "editor.action.inlineSuggest.commit",
+        "when": "neoai.tab-override && inlineSuggestionVisible && !editorTabMovesFocus"
+      },
+      {
+        "key": "ctrl+shift+q",
+        "command": "neoai.chat.focus-input"
+      }
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "*.{ts,js,css,md}": "prettier --write src/"
+  },
+  "__metadata": {
+    "id": "75da638c-c45a-44ea-aa3b-8570a3559810",
+    "publisherDisplayName": "NeoAi",
+    "publisherId": "1924b661-7c19-45d9-9800-edeb32848fd7",
+    "isPreReleaseVersion": false
+  }
+}

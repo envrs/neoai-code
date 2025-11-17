@@ -1,0 +1,25 @@
+import { ExtensionContext } from "vscode";
+import { Capability } from "../capabilities/capabilities";
+import { fireEvent } from "../binary/requests/requests";
+import { StateType } from "../globals/consts";
+import registerWidgetWebviewProvider from "../widgetWebview/widgetWebview";
+import { Logger } from "../utils/logger";
+
+const LOADED_NOTIFICATIONS_WIDGET = "loaded-notificaitons-widget-as-webview";
+
+export default function registerNotificationsWebviewProvider(
+  context: ExtensionContext
+): void {
+  registerWidgetWebviewProvider(context, {
+    capability: Capability.NOTIFICATIONS_WIDGET,
+    getHubBaseUrlSource: StateType.NOTIFICATIONS_WIDGET_WEBVIEW,
+    hubPath: "/notifications-widget",
+    viewId: "neoai-notifications",
+    readyCommand: "neoai.notifications-ready",
+    onWebviewLoaded: () => {
+      void fireEvent({
+        name: LOADED_NOTIFICATIONS_WIDGET,
+      }).catch((e) => Logger.error(e));
+    },
+  });
+}

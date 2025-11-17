@@ -1,0 +1,15 @@
+[
+    {
+        "caption": "⌬ neoai: Open Configuration",
+        "command": "openconfig"
+    },{
+    	"caption": "⌬ neoai: Disable Current View",
+        "command": "disable_view"	
+    },{
+    	"caption": "⌬ neoai: Enable Current View",
+        "command": "enable_view"	
+    },{
+    	"caption": "⌬ neoai: Enable Native Auto Complete",
+        "command": "enable_native_auto_complete"
+    }
+]

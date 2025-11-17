@@ -1,0 +1,4 @@
+rootProject.name = 'NeoAi'
+
+include 'Common'
+include 'Neoai'
